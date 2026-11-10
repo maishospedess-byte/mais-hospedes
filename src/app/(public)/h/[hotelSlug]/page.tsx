@@ -370,9 +370,9 @@ export default function GuestRegistrationPage() {
   if (error || !hotel) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-[#050810] px-4">
-        <div className="glass-card p-8 max-w-md w-full text-center">
+        <div className="glass-card p-6 sm:p-8 max-w-md w-full text-center">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-gray-300 text-lg">{error || i.errors.hotelNotFound}</p>
+          <p className="text-gray-300 text-base sm:text-lg">{error || i.errors.hotelNotFound}</p>
         </div>
       </div>
     )
@@ -382,11 +382,11 @@ export default function GuestRegistrationPage() {
   if (submitted) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-[#050810] px-4">
-        <div className="glass-card p-8 max-w-md w-full text-center space-y-6">
-          <CheckCircle2 className="w-16 h-16 text-emerald-400 mx-auto" />
-          <h2 className="text-2xl font-bold text-white">{i.success.title}</h2>
-          <p className="text-gray-300">{i.success.message}</p>
-          <p className="text-sm text-gray-500">{i.success.note}</p>
+        <div className="glass-card p-6 sm:p-8 max-w-md w-full text-center space-y-5">
+          <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
+          <h2 className="text-xl sm:text-2xl font-bold text-white">{i.success.title}</h2>
+          <p className="text-gray-300 text-sm sm:text-base">{i.success.message}</p>
+          <p className="text-xs sm:text-sm text-gray-500">{i.success.note}</p>
 
           <div className="flex flex-col gap-3 pt-2">
             {hotel.instagram_url && (
@@ -421,23 +421,21 @@ export default function GuestRegistrationPage() {
   const today = new Date().toISOString().split('T')[0]
 
   return (
-    <div className="min-h-dvh bg-[#050810] flex flex-col items-center py-6 px-4">
+    <div className="min-h-dvh bg-[#050810] flex flex-col items-center py-4 sm:py-6 px-4">
       {/* Header */}
-      <div className="w-full max-w-md mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-white">{hotel.name}</h1>
+      <div className="w-full max-w-md mb-4 sm:mb-6">
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <h1 className="text-lg sm:text-xl font-bold text-white truncate mr-2">{hotel.name}</h1>
 
           {/* Language selector */}
-          <div className="relative">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
-              onClick={() => setLocale(locale === 'pt-BR' ? 'es' : 'pt-BR')}
-            >
-              <Globe className="w-4 h-4" />
-              {locale === 'pt-BR' ? 'PT' : 'ES'}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors shrink-0"
+            onClick={() => setLocale(locale === 'pt-BR' ? 'es' : 'pt-BR')}
+          >
+            <Globe className="w-4 h-4" />
+            {locale === 'pt-BR' ? 'PT' : 'ES'}
+          </button>
         </div>
 
         {/* Progress bar */}
@@ -459,20 +457,20 @@ export default function GuestRegistrationPage() {
       </div>
 
       {/* Welcome */}
-      <div className="w-full max-w-md mb-6 text-center">
-        <h2 className="text-2xl font-bold text-white mb-1">{i.form.welcome}</h2>
+      <div className="w-full max-w-md mb-4 sm:mb-6 text-center">
+        <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">{i.form.welcome}</h2>
         <p className="text-gray-400 text-sm">{i.form.subtitle}</p>
       </div>
 
       {/* Form card */}
-      <div className="glass-card p-6 w-full max-w-md">
+      <div className="glass-card p-4 sm:p-6 w-full max-w-md">
         {/* Step 1: Personal data */}
         {step === 1 && (
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             {/* Name */}
             <div>
               <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
-                <User className="w-4 h-4 text-indigo-400" />
+                <User className="w-4 h-4 text-indigo-400 shrink-0" />
                 {i.form.fullName}
               </label>
               <input
@@ -492,12 +490,13 @@ export default function GuestRegistrationPage() {
             {/* Phone with DDI */}
             <div>
               <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
-                <Phone className="w-4 h-4 text-indigo-400" />
+                <Phone className="w-4 h-4 text-indigo-400 shrink-0" />
                 {i.form.whatsapp}
               </label>
               <div className="flex gap-2">
                 <select
-                  className="input-dark w-[130px] shrink-0"
+                  className="input-dark shrink-0"
+                  style={{ width: '105px', paddingLeft: '10px', paddingRight: '28px' }}
                   value={form.ddi}
                   onChange={(e) => {
                     updateField('ddi', e.target.value)
@@ -512,7 +511,8 @@ export default function GuestRegistrationPage() {
                 </select>
                 <input
                   type="tel"
-                  className="input-dark flex-1 min-w-0"
+                  className="input-dark"
+                  style={{ flex: '1 1 0%', minWidth: 0 }}
                   placeholder={i.form.whatsappPlaceholder}
                   value={form.whatsapp_number}
                   onChange={(e) => handlePhoneChange(e.target.value)}
@@ -528,7 +528,7 @@ export default function GuestRegistrationPage() {
             {/* Email with suggestions */}
             <div className="relative" ref={emailRef}>
               <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
-                <Mail className="w-4 h-4 text-indigo-400" />
+                <Mail className="w-4 h-4 text-indigo-400 shrink-0" />
                 {i.form.email}
               </label>
               <input
@@ -566,10 +566,10 @@ export default function GuestRegistrationPage() {
 
         {/* Step 2: Stay dates */}
         {step === 2 && (
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             <div>
               <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
-                <CalendarDays className="w-4 h-4 text-indigo-400" />
+                <CalendarDays className="w-4 h-4 text-indigo-400 shrink-0" />
                 {i.form.checkinDate}
               </label>
               <input
@@ -586,7 +586,7 @@ export default function GuestRegistrationPage() {
 
             <div>
               <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
-                <CalendarDays className="w-4 h-4 text-indigo-400" />
+                <CalendarDays className="w-4 h-4 text-indigo-400 shrink-0" />
                 {i.form.checkoutDate}
               </label>
               <input
@@ -603,7 +603,7 @@ export default function GuestRegistrationPage() {
 
             <div>
               <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-indigo-400" />
+                <Users className="w-4 h-4 text-indigo-400 shrink-0" />
                 {i.form.guestCount}
               </label>
               <input
@@ -622,36 +622,36 @@ export default function GuestRegistrationPage() {
 
         {/* Step 3: Confirmation */}
         {step === 3 && (
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             {/* Summary */}
-            <div className="bg-white/5 rounded-xl p-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">{i.form.fullName}</span>
-                <span className="text-white">{form.full_name}</span>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 space-y-2 text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500 shrink-0">{i.form.fullName}</span>
+                <span className="text-white text-right truncate">{form.full_name}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">{i.form.whatsapp}</span>
-                <span className="text-white">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500 shrink-0">{i.form.whatsapp}</span>
+                <span className="text-white text-right">
                   {form.ddi} {form.whatsapp_number}
                 </span>
               </div>
               {form.email && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">E-mail</span>
-                  <span className="text-white">{form.email}</span>
+                <div className="flex justify-between gap-2">
+                  <span className="text-gray-500 shrink-0">E-mail</span>
+                  <span className="text-white text-right truncate">{form.email}</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-gray-500">{i.form.checkinDate}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500 shrink-0">{i.form.checkinDate}</span>
                 <span className="text-white">{form.checkin_date}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">{i.form.checkoutDate}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500 shrink-0">{i.form.checkoutDate}</span>
                 <span className="text-white">{form.checkout_date}</span>
               </div>
               {form.guest_count && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{i.form.guestCount}</span>
+                <div className="flex justify-between gap-2">
+                  <span className="text-gray-500 shrink-0">{i.form.guestCount}</span>
                   <span className="text-white">{form.guest_count}</span>
                 </div>
               )}
@@ -661,7 +661,7 @@ export default function GuestRegistrationPage() {
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-gray-600 bg-transparent text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                className="mt-1 h-5 w-5 rounded border-gray-600 bg-transparent text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0 shrink-0"
                 checked={form.consent}
                 onChange={(e) => updateField('consent', e.target.checked)}
               />
@@ -686,7 +686,7 @@ export default function GuestRegistrationPage() {
         )}
 
         {/* Navigation buttons */}
-        <div className="flex gap-3 mt-6">
+        <div className="flex gap-3 mt-5 sm:mt-6">
           {step > 1 && (
             <button
               type="button"
