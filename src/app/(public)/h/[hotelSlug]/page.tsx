@@ -37,6 +37,7 @@ export default function GuestRegistrationPage({
   const hotelSlug = params.hotelSlug
   const [hotel, setHotel] = useState<Hotel | null>(null)
   const [locale, setLocale] = useState<Locale>('pt-BR')
+  const i18n = t(locale)
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
