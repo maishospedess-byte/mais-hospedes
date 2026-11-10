@@ -24,27 +24,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     async function checkAdmin() {
-      const supabase = createBrowserSupabase()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) {
-        router.push('/login?redirect=/admin')
-        return
-      }
-
-      // Check if user has is_super_admin flag
-      const { data: userData } = await supabase
-        .from('users')
-        .select('is_super_admin')
-        .eq('id', user.id)
-        .single()
-
-      if (!userData?.is_super_admin) {
+      try {
+        const res = await fetch('/api/admin/check')
+        const { isAdmin } = await res.json()
+        if (isAdmin) {
+          setAuthorized(true)
+        } else {
+          setAuthorized(false)
+        }
+      } catch {
         setAuthorized(false)
-        return
       }
-
-      setAuthorized(true)
     }
     checkAdmin()
   }, [router])

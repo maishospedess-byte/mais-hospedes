@@ -28,18 +28,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     async function checkAdmin() {
-      const supabase = createBrowserSupabase()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data } = await supabase
-        .from('users')
-        .select('is_super_admin')
-        .eq('id', user.id)
-        .single()
-
-      if (data?.is_super_admin) {
-        setIsSuperAdmin(true)
+      try {
+        const res = await fetch('/api/admin/check')
+        const { isAdmin } = await res.json()
+        if (isAdmin) setIsSuperAdmin(true)
+      } catch {
+        // silently fail
       }
     }
     checkAdmin()
