@@ -6,15 +6,17 @@ import { useHotel } from '@/hooks/useHotel'
 import { createBrowserSupabase } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import {
+  LayoutDashboard, BellRing, Users, Zap,
+  Settings, LogOut, Menu, X, type LucideIcon
+} from 'lucide-react'
 
-const NAV_ITEMS = [
-  { href: '/painel', label: 'Painel', icon: '📊' },
-  { href: '/dashboard', label: 'Recepção', icon: '🛎️' },
-  { href: '/guests', label: 'Hóspedes', icon: '👤' },
-  { href: '/stays', label: 'Estadias', icon: '🏨' },
-  { href: '/automations', label: 'Automações', icon: '⚡' },
-  { href: '/analytics', label: 'Relatórios', icon: '📈' },
-  { href: '/settings', label: 'Configurações', icon: '⚙️' },
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/painel', label: 'Painel', icon: LayoutDashboard },
+  { href: '/dashboard', label: 'Recepção', icon: BellRing },
+  { href: '/guests', label: 'Hóspedes', icon: Users },
+  { href: '/automations', label: 'Automações', icon: Zap },
+  { href: '/settings', label: 'Configurações', icon: Settings },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -30,6 +32,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.refresh()
   }
 
+  function isActive(href: string) {
+    return pathname === href || (href !== '/painel' && pathname?.startsWith(href))
+  }
+
+  const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
+    <>
+      {NAV_ITEMS.map(item => {
+        const active = isActive(item.href)
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+            style={{
+              background: active ? 'rgba(99,102,241,.12)' : 'transparent',
+              color: active ? 'var(--bb)' : 'var(--fg2)',
+            }}
+          >
+            <item.icon size={18} className="shrink-0" />
+            {item.label}
+          </Link>
+        )
+      })}
+    </>
+  )
+
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
       {/* Desktop Sidebar */}
@@ -38,57 +67,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         backdropFilter: 'blur(20px)',
         borderRight: '1px solid var(--glass-border)',
       }}>
-        {/* Logo */}
-        <div className="px-5 h-[68px] flex items-center gap-2.5 shrink-0" style={{
+        <div className="px-5 h-[64px] flex items-center gap-2.5 shrink-0" style={{
           borderBottom: '1px solid var(--glass-border)',
         }}>
-          <svg viewBox="0 0 40 40" fill="none" width="32" height="32">
-            <rect width="40" height="40" rx="10" fill="url(#slg)" />
-            <defs><linearGradient id="slg" x1="0" y1="0" x2="40" y2="40"><stop stopColor="#6366F1" /><stop offset="1" stopColor="#4F46E5" /></linearGradient></defs>
-            <path d="M11 10h6v8h10v-8h6v20h-6v-8H17v8h-6z" fill="#fff" />
-          </svg>
           <span className="text-[17px] font-extrabold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
             Mais<em className="not-italic" style={{ color: 'var(--bb)' }}>Hóspedes</em>
           </span>
         </div>
 
-        {/* Hotel name */}
         {hotel && (
           <div className="px-5 py-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-            <p className="text-xs font-medium truncate" style={{ color: 'var(--fg3)' }}>HOTEL</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--fg3)' }}>Hotel</p>
             <p className="text-sm font-semibold truncate mt-0.5">{hotel.name}</p>
           </div>
         )}
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map(item => {
-            const isActive = pathname === item.href || (item.href !== '/painel' && pathname?.startsWith(item.href))
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-                style={{
-                  background: isActive ? 'rgba(99,102,241,.12)' : 'transparent',
-                  color: isActive ? 'var(--bb)' : 'var(--fg2)',
-                }}
-              >
-                <span className="text-base">{item.icon}</span>
-                {item.label}
-              </Link>
-            )
-          })}
+          <NavLinks />
         </nav>
 
-        {/* Footer */}
         <div className="px-3 py-4 shrink-0" style={{ borderTop: '1px solid var(--glass-border)' }}>
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full"
             style={{ color: 'var(--fg3)' }}
           >
-            <span className="text-base">🚪</span>
+            <LogOut size={18} className="shrink-0" />
             Sair
           </button>
         </div>
@@ -100,14 +104,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         backdropFilter: 'blur(20px)',
         borderBottom: '1px solid var(--glass-border)',
       }}>
-        <button onClick={() => setMobileOpen(!mobileOpen)} className="text-xl p-1">☰</button>
+        <button onClick={() => setMobileOpen(true)} className="p-1" style={{ color: 'var(--fg2)' }}>
+          <Menu size={22} />
+        </button>
         <span className="text-sm font-extrabold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
           Mais<em className="not-italic" style={{ color: 'var(--bb)' }}>Hóspedes</em>
         </span>
         <div className="w-8" />
       </div>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar */}
       {mobileOpen && (
         <>
           <div className="lg:hidden fixed inset-0 z-50 bg-black/60" onClick={() => setMobileOpen(false)} />
@@ -121,37 +127,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span className="text-sm font-extrabold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 Mais<em className="not-italic" style={{ color: 'var(--bb)' }}>Hóspedes</em>
               </span>
-              <button onClick={() => setMobileOpen(false)} className="text-lg">✕</button>
+              <button onClick={() => setMobileOpen(false)} style={{ color: 'var(--fg2)' }}>
+                <X size={20} />
+              </button>
             </div>
             {hotel && (
               <div className="px-5 py-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                <p className="text-xs font-medium" style={{ color: 'var(--fg3)' }}>HOTEL</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--fg3)' }}>Hotel</p>
                 <p className="text-sm font-semibold truncate mt-0.5">{hotel.name}</p>
               </div>
             )}
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-              {NAV_ITEMS.map(item => {
-                const isActive = pathname === item.href || (item.href !== '/painel' && pathname?.startsWith(item.href))
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-                    style={{
-                      background: isActive ? 'rgba(99,102,241,.12)' : 'transparent',
-                      color: isActive ? 'var(--bb)' : 'var(--fg2)',
-                    }}
-                  >
-                    <span className="text-base">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                )
-              })}
+              <NavLinks onNavigate={() => setMobileOpen(false)} />
             </nav>
             <div className="px-3 py-4 shrink-0" style={{ borderTop: '1px solid var(--glass-border)' }}>
               <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full" style={{ color: 'var(--fg3)' }}>
-                <span className="text-base">🚪</span>
+                <LogOut size={18} className="shrink-0" />
                 Sair
               </button>
             </div>
@@ -159,7 +150,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </>
       )}
 
-      {/* Main content */}
       <main className="flex-1 min-w-0 lg:pt-0 pt-[56px]">
         {children}
       </main>
