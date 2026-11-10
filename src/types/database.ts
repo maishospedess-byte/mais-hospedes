@@ -52,6 +52,7 @@ export interface User {
   email: string
   full_name: string | null
   avatar_url: string | null
+  is_super_admin: boolean
   created_at: string
   updated_at: string
 }

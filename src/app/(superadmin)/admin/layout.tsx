@@ -1,13 +1,12 @@
 'use client'
 
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createBrowserSupabase } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   LayoutDashboard, Building2, Users, CreditCard,
-  LogOut, Menu, X, type LucideIcon
+  LogOut, Menu, X, ShieldAlert, Loader2, type LucideIcon
 } from 'lucide-react'
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
@@ -21,6 +20,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [authorized, setAuthorized] = useState<boolean | null>(null) // null = loading
+
+  useEffect(() => {
+    async function checkAdmin() {
+      const supabase = createBrowserSupabase()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        router.push('/login?redirect=/admin')
+        return
+      }
+
+      // Check if user has is_super_admin flag
+      const { data: userData } = await supabase
+        .from('users')
+        .select('is_super_admin')
+        .eq('id', user.id)
+        .single()
+
+      if (!userData?.is_super_admin) {
+        setAuthorized(false)
+        return
+      }
+
+      setAuthorized(true)
+    }
+    checkAdmin()
+  }, [router])
 
   async function handleLogout() {
     const supabase = createBrowserSupabase()
@@ -31,6 +58,42 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   function isActive(href: string) {
     if (href === '/admin') return pathname === '/admin'
     return pathname?.startsWith(href) || false
+  }
+
+  // Loading state
+  if (authorized === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <div className="text-center">
+          <Loader2 size={32} className="animate-spin mx-auto mb-3" style={{ color: 'var(--bb)' }} />
+          <p className="text-sm" style={{ color: 'var(--fg3)' }}>Verificando acesso...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Not authorized
+  if (!authorized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg)' }}>
+        <div className="glass-card p-10 max-w-[420px] w-full text-center hover:translate-y-0">
+          <ShieldAlert size={48} className="mx-auto mb-4" style={{ color: '#EF4444' }} />
+          <h1 className="text-xl font-bold mb-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            Acesso Restrito
+          </h1>
+          <p className="text-sm mb-6" style={{ color: 'var(--fg3)' }}>
+            Você não tem permissão para acessar o painel administrativo.
+          </p>
+          <Link
+            href="/painel"
+            className="btn-primary inline-flex items-center gap-2 !py-3 !px-6"
+          >
+            <Building2 size={18} />
+            Ir para o painel
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (

@@ -1,10 +1,9 @@
 'use client'
 
-import { createBrowserSupabase } from '@/lib/supabase/client'
 import { useState, useEffect } from 'react'
 import {
   LayoutDashboard, Building, Building2, CheckCircle, Users, User,
-  BedDouble, MessageSquare, Clock, CreditCard, type LucideIcon
+  BedDouble, MessageSquare, Clock, CreditCard, AlertTriangle, type LucideIcon
 } from 'lucide-react'
 
 type AdminStats = {
@@ -22,35 +21,29 @@ type AdminStats = {
 export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadStats() {
-      const supabase = createBrowserSupabase()
-
-      const [orgs, hotels, users, guests, stays, messages, subs] = await Promise.all([
-        supabase.from('organizations').select('id', { count: 'exact', head: true }),
-        supabase.from('hotels').select('id, is_active'),
-        supabase.from('users').select('id', { count: 'exact', head: true }),
-        supabase.from('guest_profiles').select('id', { count: 'exact', head: true }),
-        supabase.from('stays').select('id', { count: 'exact', head: true }),
-        supabase.from('messages').select('id', { count: 'exact', head: true }),
-        supabase.from('subscriptions').select('id, status'),
-      ])
-
-      const hotelData = hotels.data || []
-      const subData = subs.data || []
-
-      setStats({
-        totalOrgs: orgs.count || 0,
-        totalHotels: hotelData.length,
-        activeHotels: hotelData.filter(h => h.is_active).length,
-        totalUsers: users.count || 0,
-        totalGuests: guests.count || 0,
-        totalStays: stays.count || 0,
-        totalMessages: messages.count || 0,
-        trialSubs: subData.filter(s => s.status === 'trial').length,
-        activeSubs: subData.filter(s => s.status === 'active').length,
-      })
+      try {
+        const res = await fetch('/api/admin/stats')
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          if (res.status === 403) {
+            setError('Acesso negado. Sua conta não tem permissão de administrador.')
+          } else if (res.status === 401) {
+            setError('Sessão expirada. Faça login novamente.')
+          } else {
+            setError(data.error || 'Erro ao carregar estatísticas')
+          }
+          setLoading(false)
+          return
+        }
+        const data = await res.json()
+        setStats(data)
+      } catch {
+        setError('Erro de conexão ao carregar estatísticas')
+      }
       setLoading(false)
     }
     loadStats()
@@ -60,6 +53,22 @@ export default function AdminDashboard() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 rounded-full animate-pulse" style={{ background: 'rgba(99,102,241,.3)' }} />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="glass-card p-8 text-center hover:translate-y-0">
+          <AlertTriangle size={40} className="mx-auto mb-4" style={{ color: '#F59E0B' }} />
+          <h2 className="text-lg font-bold mb-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            {error}
+          </h2>
+          <p className="text-sm" style={{ color: 'var(--fg3)' }}>
+            Entre em contato com o suporte se acredita que isso é um erro.
+          </p>
+        </div>
       </div>
     )
   }
