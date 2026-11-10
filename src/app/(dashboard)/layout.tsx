@@ -5,10 +5,10 @@ import Link from 'next/link'
 import { useHotel } from '@/hooks/useHotel'
 import { createBrowserSupabase } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   LayoutDashboard, BellRing, Users, Zap,
-  Settings, LogOut, Menu, X, type LucideIcon
+  Settings, LogOut, Menu, X, Shield, type LucideIcon
 } from 'lucide-react'
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
@@ -24,6 +24,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { hotel } = useHotel()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+
+  useEffect(() => {
+    async function checkAdmin() {
+      const supabase = createBrowserSupabase()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data } = await supabase
+        .from('users')
+        .select('is_super_admin')
+        .eq('id', user.id)
+        .single()
+
+      if (data?.is_super_admin) {
+        setIsSuperAdmin(true)
+      }
+    }
+    checkAdmin()
+  }, [])
 
   async function handleLogout() {
     const supabase = createBrowserSupabase()
@@ -59,6 +79,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </>
   )
 
+  const AdminLink = ({ onNavigate }: { onNavigate?: () => void }) => {
+    if (!isSuperAdmin) return null
+    return (
+      <Link
+        href="/admin"
+        onClick={onNavigate}
+        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+        style={{
+          background: 'rgba(239,68,68,.08)',
+          color: '#F87171',
+          border: '1px solid rgba(239,68,68,.15)',
+        }}
+      >
+        <Shield size={18} className="shrink-0" />
+        Admin
+      </Link>
+    )
+  }
+
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
       {/* Desktop Sidebar */}
@@ -84,6 +123,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           <NavLinks />
+          <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+            <AdminLink />
+          </div>
         </nav>
 
         <div className="px-3 py-4 shrink-0" style={{ borderTop: '1px solid var(--glass-border)' }}>
@@ -139,6 +181,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
               <NavLinks onNavigate={() => setMobileOpen(false)} />
+              <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                <AdminLink onNavigate={() => setMobileOpen(false)} />
+              </div>
             </nav>
             <div className="px-3 py-4 shrink-0" style={{ borderTop: '1px solid var(--glass-border)' }}>
               <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full" style={{ color: 'var(--fg3)' }}>
