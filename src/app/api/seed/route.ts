@@ -3,7 +3,7 @@ import { createServiceSupabase } from '@/lib/supabase/server'
 
 export async function GET() {
   try {
-    const supabase = await createServiceSupabase()
+    const supabase = createServiceSupabase()
 
     const { data: existing } = await supabase.from('plans').select('id').limit(1)
     if (existing && existing.length > 0) {

@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 // TODO: Add Database generic once types are generated via `supabase gen types typescript`
@@ -27,14 +28,20 @@ export async function createServerSupabase() {
   )
 }
 
-export async function createServiceSupabase() {
-  return createServerClient(
+/**
+ * Service role client — bypasses RLS.
+ * Uses createClient (not createServerClient) because service role
+ * doesn't need cookie-based auth and must work identically
+ * regardless of the request context (mobile, desktop, no cookies).
+ */
+export function createServiceSupabase() {
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
-      cookies: {
-        getAll() { return [] },
-        setAll() {},
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
       },
     }
   )

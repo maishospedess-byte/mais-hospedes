@@ -1,146 +1,140 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { createBrowserSupabase } from '@/lib/supabase/client'
 import { useHotel } from '@/hooks/useHotel'
-
-type Registration = {
-  id: string
-  guest_name: string
-  guest_email: string | null
-  guest_phone: string | null
-  status: string
-  check_in_date: string | null
-  created_at: string
-}
+import {
+  LayoutDashboard, Users, Building2, CheckCircle, MessageSquare,
+  QrCode, BellRing, Settings, Download, Copy, Link2, type LucideIcon
+} from 'lucide-react'
 
 export default function PainelPage() {
   const { hotel, loading: hotelLoading } = useHotel()
-  const [registrations, setRegistrations] = useState<Registration[]>([])
-  const [loadingRegs, setLoadingRegs] = useState(true)
   const [userName, setUserName] = useState('')
   const [showQR, setShowQR] = useState(false)
   const qrRef = useRef<HTMLDivElement>(null)
-  const router = useRouter()
+  const [copied, setCopied] = useState(false)
 
-  // Load user name
+  // Stats
+  const [stats, setStats] = useState({ guests: 0, active: 0, completed: 0, messages: 0 })
+  const [loadingStats, setLoadingStats] = useState(true)
+
   useEffect(() => {
     async function loadUser() {
       const supabase = createBrowserSupabase()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
-      }
+      if (!user) return
       const { data } = await supabase.from('users').select('full_name').eq('id', user.id).single()
       if (data) setUserName(data.full_name || '')
     }
     loadUser()
-  }, [router])
+  }, [])
 
-  // Load registrations
   useEffect(() => {
     if (!hotel) return
-    async function loadRegs() {
+    async function loadStats() {
       const supabase = createBrowserSupabase()
-      const { data } = await supabase
-        .from('registrations')
-        .select('id, guest_name, guest_email, guest_phone, status, check_in_date, created_at')
-        .eq('hotel_id', hotel!.id)
-        .order('created_at', { ascending: false })
-        .limit(20)
-      setRegistrations(data || [])
-      setLoadingRegs(false)
+      const [guestsRes, staysRes, msgsRes] = await Promise.all([
+        supabase.from('guest_profiles').select('id', { count: 'exact', head: true }).eq('hotel_id', hotel!.id),
+        supabase.from('stays').select('id, status').eq('hotel_id', hotel!.id),
+        supabase.from('messages').select('id', { count: 'exact', head: true }).eq('hotel_id', hotel!.id).eq('direction', 'outbound'),
+      ])
+      const stayData = staysRes.data || []
+      setStats({
+        guests: guestsRes.count || 0,
+        active: stayData.filter(s => s.status === 'stay_active').length,
+        completed: stayData.filter(s => s.status === 'stay_completed').length,
+        messages: msgsRes.count || 0,
+      })
+      setLoadingStats(false)
     }
-    loadRegs()
+    loadStats()
   }, [hotel])
-
-  async function handleLogout() {
-    const supabase = createBrowserSupabase()
-    await supabase.auth.signOut()
-    router.push('/')
-    router.refresh()
-  }
 
   if (hotelLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-pulse w-10 h-10 rounded-full bg-indigo-500/30" />
+      <div className="flex items-center justify-center h-64">
+        <div className="w-10 h-10 rounded-full animate-pulse" style={{ background: 'rgba(99,102,241,.3)' }} />
       </div>
     )
   }
 
   if (!hotel) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <p className="text-gray-500">Nenhum hotel encontrado. Faça login novamente.</p>
+      <div className="flex items-center justify-center h-64">
+        <p style={{ color: 'var(--fg3)' }}>Nenhum hotel encontrado.</p>
       </div>
     )
   }
 
-  const qrUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/h/${hotel.slug}`
-    : `/h/${hotel.slug}`
+  // Always use production URL for QR codes — they must work on external devices
+  const PRODUCTION_URL = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+  const qrUrl = `${PRODUCTION_URL}/h/${hotel.slug}`
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`
 
-  const statusLabel: Record<string, string> = {
-    pending: 'Aguardando',
-    confirmed: 'Confirmado',
-    checked_in: 'Hospedado',
-    checked_out: 'Checkout',
-    blocked: 'Bloqueado',
-  }
+  const statCards: { label: string; value: number; icon: LucideIcon; color: string }[] = [
+    { label: 'Hospedes', value: stats.guests, icon: Users, color: 'var(--bb)' },
+    { label: 'Hospedados', value: stats.active, icon: Building2, color: 'var(--green)' },
+    { label: 'Checkout', value: stats.completed, icon: CheckCircle, color: 'var(--fg3)' },
+    { label: 'Mensagens', value: stats.messages, icon: MessageSquare, color: '#25D366' },
+  ]
 
-  const statusColor: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-700',
-    confirmed: 'bg-blue-100 text-blue-700',
-    checked_in: 'bg-green-100 text-green-700',
-    checked_out: 'bg-gray-100 text-gray-600',
-    blocked: 'bg-red-100 text-red-700',
-  }
+  const quickLinks: { href: string; icon: LucideIcon; label: string; desc: string }[] = [
+    { href: '/dashboard', icon: BellRing, label: 'Recepcao', desc: 'Registros em tempo real' },
+    { href: '/guests', icon: Users, label: 'Hospedes', desc: 'Lista de hospedes' },
+    { href: '/settings', icon: Settings, label: 'Configuracoes', desc: 'Horarios, Wi-Fi, links' },
+  ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-indigo-600">Mais Hóspedes</h1>
-            <p className="text-sm text-gray-500">{hotel.name}</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600 hidden sm:block">Olá, {userName.split(' ')[0]}</span>
-            <a
-              href="/dashboard"
-              className="text-sm text-indigo-600 hover:text-indigo-700 transition font-medium"
-            >
-              Admin
-            </a>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-500 hover:text-gray-700 transition"
-            >
-              Sair
-            </button>
-          </div>
+    <div>
+      {/* Page header */}
+      <div className="px-6 py-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+        <div className="flex items-center gap-2">
+          <LayoutDashboard size={22} className="shrink-0" style={{ color: 'var(--bb)' }} />
+          <h1 className="text-xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            Painel
+          </h1>
         </div>
-      </header>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--fg3)' }}>
+          {userName ? `Ola, ${userName.split(' ')[0]}! ` : ''}Visao geral de {hotel.name}
+        </p>
+      </div>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-        {/* QR Code section */}
-        <section className="bg-white rounded-2xl border border-gray-200 p-6">
+      <div className="p-6 space-y-6">
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {statCards.map(s => (
+            <div key={s.label} className="glass-card p-5 text-center hover:translate-y-0">
+              <div className="flex justify-center mb-2">
+                <s.icon size={24} style={{ color: loadingStats ? 'var(--fg3)' : s.color }} />
+              </div>
+              <div className="text-2xl font-black" style={{
+                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                color: loadingStats ? 'var(--fg3)' : s.color,
+              }}>{loadingStats ? '...' : s.value}</div>
+              <div className="text-xs mt-1" style={{ color: 'var(--fg3)' }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* QR Code */}
+        <section className="glass-card p-6 hover:translate-y-0">
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">QR Code do seu hotel</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Imprima e coloque na recepção. Hóspedes escaneiam e se cadastram.
+              <div className="flex items-center gap-2">
+                <QrCode size={20} className="shrink-0" style={{ color: 'var(--bb)' }} />
+                <h2 className="text-lg font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                  QR Code do hotel
+                </h2>
+              </div>
+              <p className="text-sm mt-1" style={{ color: 'var(--fg2)' }}>
+                Imprima e coloque na recepcao. Hospedes escaneiam e se cadastram.
               </p>
             </div>
             <button
               onClick={() => setShowQR(!showQR)}
-              className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition"
+              className="btn-primary !py-[10px] !px-5 !text-sm !rounded-xl"
             >
               {showQR ? 'Ocultar' : 'Ver QR Code'}
             </button>
@@ -148,7 +142,10 @@ export default function PainelPage() {
 
           {showQR && (
             <div ref={qrRef} className="flex flex-col items-center py-6 space-y-4">
-              <div className="bg-white p-4 rounded-xl border-2 border-indigo-100">
+              <div className="p-4 rounded-xl" style={{
+                background: '#fff',
+                boxShadow: '0 0 40px rgba(99,102,241,.15)'
+              }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={qrImageUrl}
@@ -159,8 +156,8 @@ export default function PainelPage() {
                 />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-gray-700">{hotel.name}</p>
-                <p className="text-xs text-gray-400 mt-1 font-mono">{qrUrl}</p>
+                <p className="text-sm font-medium">{hotel.name}</p>
+                <p className="text-xs font-mono mt-1" style={{ color: 'var(--fg3)' }}>{qrUrl}</p>
               </div>
               <div className="flex gap-3">
                 <a
@@ -168,25 +165,35 @@ export default function PainelPage() {
                   download={`qrcode-${hotel.slug}.png`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-700"
+                  className="btn-glass !py-[8px] !px-4 !text-sm !rounded-lg flex items-center gap-2"
                 >
+                  <Download size={14} className="shrink-0" />
                   Baixar PNG
                 </a>
                 <button
                   onClick={() => {
-                    try { navigator.clipboard.writeText(qrUrl) } catch {}
+                    try {
+                      navigator.clipboard.writeText(qrUrl)
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 2000)
+                    } catch {}
                   }}
-                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-700"
+                  className="btn-glass !py-[8px] !px-4 !text-sm !rounded-lg flex items-center gap-2"
                 >
-                  Copiar link
+                  <Copy size={14} className="shrink-0" />
+                  {copied ? 'Copiado!' : 'Copiar link'}
                 </button>
               </div>
             </div>
           )}
 
-          <div className="mt-4 p-3 bg-indigo-50 rounded-xl">
-            <p className="text-sm text-indigo-700">
-              <strong>Link do formulário:</strong>{' '}
+          <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{
+            background: 'rgba(99,102,241,.06)',
+            border: '1px solid rgba(99,102,241,.1)'
+          }}>
+            <Link2 size={14} className="shrink-0" style={{ color: 'var(--bb)' }} />
+            <p className="text-sm" style={{ color: 'var(--bb)' }}>
+              <strong>Link do formulario:</strong>{' '}
               <a href={`/h/${hotel.slug}`} target="_blank" rel="noopener noreferrer" className="underline font-mono">
                 /h/{hotel.slug}
               </a>
@@ -194,56 +201,21 @@ export default function PainelPage() {
           </div>
         </section>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: 'Total', value: registrations.length, color: 'text-gray-900' },
-            { label: 'Aguardando', value: registrations.filter(r => r.status === 'pending').length, color: 'text-yellow-600' },
-            { label: 'Hospedados', value: registrations.filter(r => r.status === 'checked_in').length, color: 'text-green-600' },
-            { label: 'Checkout', value: registrations.filter(r => r.status === 'checked_out').length, color: 'text-gray-500' },
-          ].map((s) => (
-            <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-              <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-              <div className="text-xs text-gray-500 mt-1">{s.label}</div>
-            </div>
+        {/* Quick links */}
+        <div className="grid sm:grid-cols-3 gap-3">
+          {quickLinks.map(link => (
+            <a key={link.href} href={link.href} className="glass-card p-4 hover:translate-y-0 group transition-all">
+              <div className="flex items-center gap-3">
+                <link.icon size={22} className="shrink-0" style={{ color: 'var(--bb)' }} />
+                <div>
+                  <p className="font-semibold text-sm group-hover:text-[var(--bb)] transition-colors">{link.label}</p>
+                  <p className="text-xs" style={{ color: 'var(--fg3)' }}>{link.desc}</p>
+                </div>
+              </div>
+            </a>
           ))}
         </div>
-
-        {/* Registrations */}
-        <section className="bg-white rounded-2xl border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900">Últimos registros</h2>
-          </div>
-          {loadingRegs ? (
-            <div className="p-8 text-center text-gray-400">Carregando...</div>
-          ) : registrations.length === 0 ? (
-            <div className="p-8 text-center">
-              <div className="text-4xl mb-3">📋</div>
-              <p className="text-gray-500 font-medium">Nenhum registro ainda</p>
-              <p className="text-sm text-gray-400 mt-1">
-                Quando um hóspede escanear o QR Code, aparecerá aqui.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {registrations.map((reg) => (
-                <div key={reg.id} className="px-6 py-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">{reg.guest_name}</p>
-                    <p className="text-sm text-gray-500">
-                      {reg.guest_phone || reg.guest_email || 'Sem contato'}
-                      {reg.check_in_date && ` · Check-in: ${new Date(reg.check_in_date).toLocaleDateString('pt-BR')}`}
-                    </p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor[reg.status] || 'bg-gray-100 text-gray-600'}`}>
-                    {statusLabel[reg.status] || reg.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
+      </div>
     </div>
   )
 }

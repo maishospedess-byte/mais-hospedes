@@ -1,21 +1,43 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { type Locale, t } from '@/lib/i18n/translations'
-import { createBrowserSupabase } from '@/lib/supabase/client'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useParams } from 'next/navigation'
+import {
+  User,
+  Phone,
+  Mail,
+  CalendarDays,
+  Users,
+  ChevronRight,
+  ChevronLeft,
+  CheckCircle2,
+  AlertCircle,
+  Globe,
+  Shield,
+  Loader2,
+  MessageCircle,
+  ExternalLink,
+} from 'lucide-react'
+import type { Locale } from '@/lib/i18n/translations'
+import { t } from '@/lib/i18n/translations'
 
-type Hotel = {
+/* ------------------------------------------------------------------ */
+/* Types                                                               */
+/* ------------------------------------------------------------------ */
+
+interface HotelData {
   id: string
   name: string
   slug: string
+  is_active: boolean
   instagram_url: string | null
   whatsapp_number: string | null
-  is_active: boolean
 }
 
-type FormData = {
+interface FormData {
   full_name: string
   whatsapp_number: string
+  ddi: string
   email: string
   checkin_date: string
   checkout_date: string
@@ -23,30 +45,118 @@ type FormData = {
   consent: boolean
 }
 
-const FLAGS: Record<Locale, string> = {
-  'pt-BR': '🇧🇷',
-  es: '🇪🇸',
-  en: '🇺🇸',
+interface FormErrors {
+  full_name?: string
+  whatsapp_number?: string
+  email?: string
+  checkin_date?: string
+  checkout_date?: string
+  consent?: string
 }
 
-export default function GuestRegistrationPage({
-  params,
-}: {
-  params: { hotelSlug: string }
-}) {
-  const hotelSlug = params.hotelSlug
-  const [hotel, setHotel] = useState<Hotel | null>(null)
-  const [locale, setLocale] = useState<Locale>('pt-BR')
-  const i18n = t(locale)
-  const [step, setStep] = useState(1)
+/* ------------------------------------------------------------------ */
+/* DDI Config                                                          */
+/* ------------------------------------------------------------------ */
+
+const DDI_OPTIONS = [
+  { code: '+55', country: 'BR', label: 'Brasil (+55)' },
+  { code: '+595', country: 'PY', label: 'Paraguay (+595)' },
+] as const
+
+/* ------------------------------------------------------------------ */
+/* Phone masks                                                         */
+/* ------------------------------------------------------------------ */
+
+function applyPhoneMask(value: string, ddi: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (ddi === '+55') {
+    if (digits.length <= 2) return digits.length ? `(${digits}` : ''
+    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+    if (digits.length <= 10)
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`
+  }
+  if (ddi === '+595') {
+    if (digits.length <= 3) return digits.length ? `(${digits}` : ''
+    if (digits.length <= 9)
+      return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 9)}`
+  }
+  return digits
+}
+
+function phoneToE164(raw: string, ddi: string): string {
+  const digits = raw.replace(/\D/g, '')
+  return `${ddi}${digits}`
+}
+
+function isValidPhone(raw: string, ddi: string): boolean {
+  const digits = raw.replace(/\D/g, '')
+  if (ddi === '+55') return digits.length === 10 || digits.length === 11
+  if (ddi === '+595') return digits.length >= 7 && digits.length <= 9
+  return digits.length >= 7
+}
+
+/* ------------------------------------------------------------------ */
+/* Email suggestions                                                   */
+/* ------------------------------------------------------------------ */
+
+const EMAIL_DOMAINS = [
+  'gmail.com',
+  'hotmail.com',
+  'outlook.com',
+  'yahoo.com',
+  'icloud.com',
+  'live.com',
+  'uol.com.br',
+  'terra.com.br',
+  'bol.com.br',
+]
+
+function getEmailSuggestions(input: string): string[] {
+  if (!input.includes('@')) return []
+  const [local, partialDomain] = input.split('@')
+  if (!local || !partialDomain) return []
+  return EMAIL_DOMAINS.filter(
+    (d) => d.startsWith(partialDomain.toLowerCase()) && d !== partialDomain.toLowerCase()
+  )
+    .slice(0, 3)
+    .map((d) => `${local}@${d}`)
+}
+
+/* ------------------------------------------------------------------ */
+/* Validation                                                          */
+/* ------------------------------------------------------------------ */
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+/* ------------------------------------------------------------------ */
+/* Component                                                           */
+/* ------------------------------------------------------------------ */
+
+export default function GuestRegistrationPage() {
+  const params = useParams()
+  const hotelSlug = params.hotelSlug as string
+
+  const [hotel, setHotel] = useState<HotelData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [formData, setFormData] = useState<FormData>({
+  const [locale, setLocale] = useState<Locale>('pt-BR')
+  const [step, setStep] = useState(1)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [formErrors, setFormErrors] = useState<FormErrors>({})
+  const [emailSuggestions, setEmailSuggestions] = useState<string[]>([])
+  const [showEmailSuggestions, setShowEmailSuggestions] = useState(false)
+  const emailRef = useRef<HTMLInputElement>(null)
+
+  const [form, setForm] = useState<FormData>({
     full_name: '',
     whatsapp_number: '',
+    ddi: '+55',
     email: '',
     checkin_date: '',
     checkout_date: '',
@@ -54,471 +164,569 @@ export default function GuestRegistrationPage({
     consent: false,
   })
 
-  // Load hotel data
+  const i = useMemo(() => t(locale), [locale])
+
+  // Fetch hotel via API (service role — works without auth)
   useEffect(() => {
     if (!hotelSlug) return
-
-    async function loadHotel() {
-      const supabase = createBrowserSupabase()
-      const { data, error: err } = await supabase
-        .from('hotels')
-        .select('id, name, slug, instagram_url, whatsapp_number, is_active')
-        .eq('slug', hotelSlug)
-        .single()
-
-      if (err || !data) {
-        setError(i18n.errors.hotelNotFound)
-        setLoading(false)
-        return
-      }
-
-      if (!data.is_active) {
-        setError(i18n.errors.hotelInactive)
-        setLoading(false)
-        return
-      }
-
-      setHotel(data as Hotel)
-      setLoading(false)
-    }
-
-    loadHotel()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hotelSlug])
-
-  function updateField(field: keyof FormData, value: string | boolean) {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    setFieldErrors((prev) => {
-      const next = { ...prev }
-      delete next[field]
-      return next
-    })
-  }
-
-  function validateStep1(): boolean {
-    const errors: Record<string, string> = {}
-
-    if (!formData.full_name.trim() || formData.full_name.trim().length < 2) {
-      errors.full_name = i18n.errors.nameRequired
-    }
-    if (formData.full_name.length > 200) {
-      errors.full_name = i18n.errors.nameTooLong
-    }
-
-    const cleanNumber = formData.whatsapp_number.replace(/\s/g, '')
-    if (!cleanNumber || !/^\+[1-9]\d{1,14}$/.test(cleanNumber)) {
-      errors.whatsapp_number = i18n.errors.whatsappInvalid
-    }
-
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = i18n.errors.emailInvalid
-    }
-
-    setFieldErrors(errors)
-    return Object.keys(errors).length === 0
-  }
-
-  function validateStep2(): boolean {
-    const errors: Record<string, string> = {}
-
-    if (!formData.checkin_date) {
-      errors.checkin_date = i18n.errors.checkinRequired
-    }
-    if (!formData.checkout_date) {
-      errors.checkout_date = i18n.errors.checkoutRequired
-    }
-    if (formData.checkin_date && formData.checkout_date) {
-      if (new Date(formData.checkout_date) <= new Date(formData.checkin_date)) {
-        errors.checkout_date = i18n.errors.checkoutBeforeCheckin
-      }
-    }
-
-    setFieldErrors(errors)
-    return Object.keys(errors).length === 0
-  }
-
-  function validateStep3(): boolean {
-    const errors: Record<string, string> = {}
-
-    if (!formData.consent) {
-      errors.consent = i18n.errors.consentRequired
-    }
-
-    setFieldErrors(errors)
-    return Object.keys(errors).length === 0
-  }
-
-  function nextStep() {
-    if (step === 1 && !validateStep1()) return
-    if (step === 2 && !validateStep2()) return
-    setStep((s) => Math.min(s + 1, 3))
-  }
-
-  function prevStep() {
-    setStep((s) => Math.max(s - 1, 1))
-  }
-
-  async function handleSubmit() {
-    if (!validateStep3() || !hotel) return
-
-    setSubmitting(true)
+    setLoading(true)
     setError(null)
+
+    let cancelled = false
+
+    async function fetchHotel(attempt: number) {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 12000)
+
+      try {
+        const res = await fetch(`/api/hotel/${encodeURIComponent(hotelSlug)}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        })
+        clearTimeout(timeoutId)
+        if (cancelled) return
+
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          if (res.status === 404 && body.code === 'HOTEL_NOT_FOUND') {
+            setError(i.errors.hotelNotFound)
+            return
+          }
+          throw new Error('SERVER_ERROR')
+        }
+        const data = body as HotelData
+        if (!data.is_active) {
+          setError(i.errors.hotelInactive)
+        } else {
+          setHotel(data)
+        }
+      } catch (err) {
+        clearTimeout(timeoutId)
+        if (cancelled) return
+        const isNotFound = err instanceof Error && err.message === 'HOTEL_NOT_FOUND'
+        if (isNotFound) {
+          setError(i.errors.hotelNotFound)
+          return
+        }
+        // Retry once on network/server errors (common on mobile wake-up)
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1500))
+          if (!cancelled) return fetchHotel(attempt + 1)
+        }
+        setError(i.errors.connectionError)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    fetchHotel(1)
+    return () => { cancelled = true }
+  }, [hotelSlug, i.errors.hotelNotFound, i.errors.hotelInactive, i.errors.connectionError])
+
+  // Close email suggestions on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (emailRef.current && !emailRef.current.contains(e.target as Node)) {
+        setShowEmailSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const updateField = useCallback(
+    <K extends keyof FormData>(key: K, value: FormData[K]) => {
+      setForm((prev) => ({ ...prev, [key]: value }))
+      setFormErrors((prev) => ({ ...prev, [key]: undefined }))
+    },
+    []
+  )
+
+  const handlePhoneChange = useCallback(
+    (raw: string) => {
+      const masked = applyPhoneMask(raw, form.ddi)
+      updateField('whatsapp_number', masked)
+    },
+    [form.ddi, updateField]
+  )
+
+  const handleEmailChange = useCallback(
+    (val: string) => {
+      updateField('email', val)
+      const suggestions = getEmailSuggestions(val)
+      setEmailSuggestions(suggestions)
+      setShowEmailSuggestions(suggestions.length > 0)
+    },
+    [updateField]
+  )
+
+  const selectEmailSuggestion = useCallback(
+    (suggestion: string) => {
+      updateField('email', suggestion)
+      setShowEmailSuggestions(false)
+    },
+    [updateField]
+  )
+
+  /* ---- Validation ---- */
+
+  const validateStep1 = useCallback((): boolean => {
+    const errs: FormErrors = {}
+    if (!form.full_name.trim()) errs.full_name = i.errors.nameRequired
+    else if (form.full_name.length > 120) errs.full_name = i.errors.nameTooLong
+    if (!isValidPhone(form.whatsapp_number, form.ddi))
+      errs.whatsapp_number = i.errors.whatsappInvalid
+    if (form.email && !isValidEmail(form.email)) errs.email = i.errors.emailInvalid
+    setFormErrors(errs)
+    return Object.keys(errs).length === 0
+  }, [form, i.errors])
+
+  const validateStep2 = useCallback((): boolean => {
+    const errs: FormErrors = {}
+    if (!form.checkin_date) errs.checkin_date = i.errors.checkinRequired
+    if (!form.checkout_date) errs.checkout_date = i.errors.checkoutRequired
+    if (form.checkin_date && form.checkout_date && form.checkout_date <= form.checkin_date)
+      errs.checkout_date = i.errors.checkoutBeforeCheckin
+    setFormErrors(errs)
+    return Object.keys(errs).length === 0
+  }, [form, i.errors])
+
+  const validateStep3 = useCallback((): boolean => {
+    const errs: FormErrors = {}
+    if (!form.consent) errs.consent = i.errors.consentRequired
+    setFormErrors(errs)
+    return Object.keys(errs).length === 0
+  }, [form.consent, i.errors])
+
+  /* ---- Navigation ---- */
+
+  const nextStep = useCallback(() => {
+    if (step === 1 && validateStep1()) setStep(2)
+    else if (step === 2 && validateStep2()) setStep(3)
+  }, [step, validateStep1, validateStep2])
+
+  const prevStep = useCallback(() => {
+    if (step > 1) setStep(step - 1)
+  }, [step])
+
+  /* ---- Submit ---- */
+
+  const handleSubmit = useCallback(async () => {
+    if (!validateStep3() || !hotel) return
+    setSubmitting(true)
+    setSubmitError(null)
+
+    const payload = {
+      hotel_slug: hotel.slug,
+      full_name: form.full_name.trim(),
+      whatsapp_number: phoneToE164(form.whatsapp_number, form.ddi),
+      email: form.email.trim() || undefined,
+      checkin_date: form.checkin_date,
+      checkout_date: form.checkout_date,
+      guest_count: form.guest_count ? parseInt(form.guest_count, 10) : undefined,
+      language: locale,
+      consent: true,
+    }
 
     try {
       const res = await fetch('/api/registration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hotel_slug: hotel.slug,
-          full_name: formData.full_name.trim(),
-          whatsapp_number: formData.whatsapp_number.replace(/\s/g, ''),
-          email: formData.email || undefined,
-          checkin_date: formData.checkin_date,
-          checkout_date: formData.checkout_date,
-          guest_count: formData.guest_count ? parseInt(formData.guest_count) : undefined,
-          language: locale,
-          consent: formData.consent,
-        }),
+        body: JSON.stringify(payload),
       })
-
-      const result = await res.json()
+      const body = await res.json()
 
       if (!res.ok) {
-        if (result.code === 'DUPLICATE') {
-          setError(i18n.errors.duplicateRegistration)
+        if (body.code === 'DUPLICATE') {
+          setSubmitError(i.errors.duplicateRegistration)
         } else {
-          setError(result.error || i18n.errors.submitError)
+          setSubmitError(i.errors.submitError)
         }
-        setSubmitting(false)
         return
       }
 
-      setSuccess(true)
+      setSubmitted(true)
     } catch {
-      setError(i18n.errors.submitError)
+      setSubmitError(i.errors.connectionError)
     } finally {
       setSubmitting(false)
     }
-  }
+  }, [validateStep3, hotel, form, locale, i.errors])
 
-  // Loading state
+  /* ---------------------------------------------------------------- */
+  /* Render                                                            */
+  /* ---------------------------------------------------------------- */
+
+  // Loading
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-white">
-        <div className="animate-pulse flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-indigo-200" />
-          <div className="h-3 w-32 bg-indigo-100 rounded" />
+      <div className="min-h-dvh flex items-center justify-center bg-[#050810]">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+      </div>
+    )
+  }
+
+  // Error (hotel not found / inactive)
+  if (error || !hotel) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-[#050810] px-4">
+        <div className="glass-card p-8 max-w-md w-full text-center">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <p className="text-gray-300 text-lg">{error || i.errors.hotelNotFound}</p>
         </div>
       </div>
     )
   }
 
-  // Error state (hotel not found)
-  if (error && !hotel) {
+  // Success
+  if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-white p-4">
-        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-sm w-full text-center">
-          <div className="text-4xl mb-4">😕</div>
-          <p className="text-gray-700 text-lg">{error}</p>
-        </div>
-      </div>
-    )
-  }
+      <div className="min-h-dvh flex items-center justify-center bg-[#050810] px-4">
+        <div className="glass-card p-8 max-w-md w-full text-center space-y-6">
+          <CheckCircle2 className="w-16 h-16 text-emerald-400 mx-auto" />
+          <h2 className="text-2xl font-bold text-white">{i.success.title}</h2>
+          <p className="text-gray-300">{i.success.message}</p>
+          <p className="text-sm text-gray-500">{i.success.note}</p>
 
-  // Success state
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-white p-4">
-        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-sm w-full text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-3">{i18n.success.title}</h1>
-          <p className="text-gray-600 mb-4">{i18n.success.message}</p>
-          <p className="text-sm text-gray-400 mb-6">{i18n.success.note}</p>
-
-          <div className="flex flex-col gap-3">
-            {hotel?.instagram_url && (
+          <div className="flex flex-col gap-3 pt-2">
+            {hotel.instagram_url && (
               <a
                 href={hotel.instagram_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:opacity-90 transition"
+                className="btn-glass flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm"
               >
-                📸 {i18n.success.followInstagram}
+                <ExternalLink className="w-4 h-4" />
+                {i.success.followInstagram}
               </a>
             )}
-            {hotel?.whatsapp_number && (
+            {hotel.whatsapp_number && (
               <a
-                href={`https://wa.me/${hotel.whatsapp_number.replace(/\+/g, '')}`}
+                href={`https://wa.me/${hotel.whatsapp_number.replace(/\D/g, '')}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-green-500 text-white font-medium hover:opacity-90 transition"
+                className="btn-glass flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm"
               >
-                💬 {i18n.success.saveContact}
+                <MessageCircle className="w-4 h-4" />
+                {i.success.saveContact}
               </a>
             )}
-          </div>
-
-          <div className="mt-8">
-            <span className="text-xs text-gray-300 font-medium tracking-wider uppercase">
-              Mais Hóspedes
-            </span>
           </div>
         </div>
       </div>
     )
   }
 
-  // Form
+  // Today string for date inputs
+  const today = new Date().toISOString().split('T')[0]
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-white flex flex-col">
-      {/* Language selector */}
-      <div className="flex justify-center gap-2 pt-4 px-4">
-        {(['pt-BR', 'es', 'en'] as Locale[]).map((lang) => (
-          <button
-            key={lang}
-            onClick={() => setLocale(lang)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition ${
-              locale === lang
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-            }`}
-          >
-            <span>{FLAGS[lang]}</span>
-            <span>{i18n.language[lang === 'pt-BR' ? 'ptBR' : lang]}</span>
-          </button>
-        ))}
-      </div>
-
+    <div className="min-h-dvh bg-[#050810] flex flex-col items-center py-6 px-4">
       {/* Header */}
-      <div className="text-center px-6 pt-6 pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">{i18n.form.welcome}</h1>
-        <p className="text-gray-500 mt-1 text-sm">{i18n.form.subtitle}</p>
-      </div>
+      <div className="w-full max-w-md mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-xl font-bold text-white">{hotel.name}</h1>
 
-      {/* Progress bar */}
-      <div className="flex items-center gap-2 px-6 mb-6">
-        {[1, 2, 3].map((s) => (
-          <div key={s} className="flex-1">
-            <div
-              className={`h-1.5 rounded-full transition-colors ${
-                s <= step ? 'bg-indigo-600' : 'bg-gray-200'
-              }`}
-            />
-            <p className={`text-xs mt-1 ${s <= step ? 'text-indigo-600 font-medium' : 'text-gray-400'}`}>
-              {s === 1 ? i18n.form.step1 : s === 2 ? i18n.form.step2 : i18n.form.step3}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Form content */}
-      <div className="flex-1 px-6 pb-6">
-        <div className="bg-white rounded-2xl shadow-lg p-6 max-w-md mx-auto">
-          {/* Step 1: Personal data */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {i18n.form.fullName} *
-                </label>
-                <input
-                  type="text"
-                  value={formData.full_name}
-                  onChange={(e) => updateField('full_name', e.target.value)}
-                  placeholder={i18n.form.fullNamePlaceholder}
-                  className={`w-full px-4 py-3 rounded-xl border transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none ${
-                    fieldErrors.full_name ? 'border-red-400 bg-red-50' : 'border-gray-200'
-                  }`}
-                  autoComplete="name"
-                />
-                {fieldErrors.full_name && (
-                  <p className="text-red-500 text-xs mt-1">{fieldErrors.full_name}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {i18n.form.whatsapp} *
-                </label>
-                <input
-                  type="tel"
-                  value={formData.whatsapp_number}
-                  onChange={(e) => updateField('whatsapp_number', e.target.value)}
-                  placeholder={i18n.form.whatsappPlaceholder}
-                  className={`w-full px-4 py-3 rounded-xl border transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none ${
-                    fieldErrors.whatsapp_number ? 'border-red-400 bg-red-50' : 'border-gray-200'
-                  }`}
-                  autoComplete="tel"
-                />
-                {fieldErrors.whatsapp_number && (
-                  <p className="text-red-500 text-xs mt-1">{fieldErrors.whatsapp_number}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {i18n.form.email}
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => updateField('email', e.target.value)}
-                  placeholder={i18n.form.emailPlaceholder}
-                  className={`w-full px-4 py-3 rounded-xl border transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none ${
-                    fieldErrors.email ? 'border-red-400 bg-red-50' : 'border-gray-200'
-                  }`}
-                  autoComplete="email"
-                />
-                {fieldErrors.email && (
-                  <p className="text-red-500 text-xs mt-1">{fieldErrors.email}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Stay dates */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {i18n.form.checkinDate} *
-                </label>
-                <input
-                  type="date"
-                  value={formData.checkin_date}
-                  onChange={(e) => updateField('checkin_date', e.target.value)}
-                  className={`w-full px-4 py-3 rounded-xl border transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none ${
-                    fieldErrors.checkin_date ? 'border-red-400 bg-red-50' : 'border-gray-200'
-                  }`}
-                />
-                {fieldErrors.checkin_date && (
-                  <p className="text-red-500 text-xs mt-1">{fieldErrors.checkin_date}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {i18n.form.checkoutDate} *
-                </label>
-                <input
-                  type="date"
-                  value={formData.checkout_date}
-                  onChange={(e) => updateField('checkout_date', e.target.value)}
-                  className={`w-full px-4 py-3 rounded-xl border transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none ${
-                    fieldErrors.checkout_date ? 'border-red-400 bg-red-50' : 'border-gray-200'
-                  }`}
-                />
-                {fieldErrors.checkout_date && (
-                  <p className="text-red-500 text-xs mt-1">{fieldErrors.checkout_date}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {i18n.form.guestCount}
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={formData.guest_count}
-                  onChange={(e) => updateField('guest_count', e.target.value)}
-                  placeholder={i18n.form.guestCountPlaceholder}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Confirmation */}
-          {step === 3 && (
-            <div className="space-y-4">
-              {/* Summary */}
-              <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{i18n.form.fullName}</span>
-                  <span className="font-medium text-gray-900">{formData.full_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{i18n.form.whatsapp}</span>
-                  <span className="font-medium text-gray-900">{formData.whatsapp_number}</span>
-                </div>
-                {formData.email && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">{i18n.form.email}</span>
-                    <span className="font-medium text-gray-900">{formData.email}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{i18n.form.checkinDate}</span>
-                  <span className="font-medium text-gray-900">{formData.checkin_date}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{i18n.form.checkoutDate}</span>
-                  <span className="font-medium text-gray-900">{formData.checkout_date}</span>
-                </div>
-              </div>
-
-              {/* Consent */}
-              <label className={`flex items-start gap-3 p-4 rounded-xl border transition cursor-pointer ${
-                fieldErrors.consent ? 'border-red-400 bg-red-50' : 'border-gray-200 hover:border-indigo-300'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={formData.consent}
-                  onChange={(e) => updateField('consent', e.target.checked)}
-                  className="mt-0.5 h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div>
-                  <span className="text-sm text-gray-700">{i18n.form.consent}</span>
-                  <p className="text-xs text-gray-400 mt-1">{i18n.form.privacyNotice}</p>
-                </div>
-              </label>
-              {fieldErrors.consent && (
-                <p className="text-red-500 text-xs">{fieldErrors.consent}</p>
-              )}
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-sm">
-                  {error}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Navigation buttons */}
-          <div className="flex gap-3 mt-6">
-            {step > 1 && (
-              <button
-                onClick={prevStep}
-                className="flex-1 px-6 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition"
-              >
-                {i18n.form.back}
-              </button>
-            )}
-            {step < 3 ? (
-              <button
-                onClick={nextStep}
-                className="flex-1 px-6 py-3 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition shadow-sm"
-              >
-                {i18n.form.next}
-              </button>
-            ) : (
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="flex-1 px-6 py-3 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? i18n.form.submitting : i18n.form.submit}
-              </button>
-            )}
+          {/* Language selector */}
+          <div className="relative">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+              onClick={() => setLocale(locale === 'pt-BR' ? 'es' : 'pt-BR')}
+            >
+              <Globe className="w-4 h-4" />
+              {locale === 'pt-BR' ? 'PT' : 'ES'}
+            </button>
           </div>
         </div>
 
-        {/* Branding */}
-        <div className="text-center mt-6">
-          <span className="text-xs text-gray-300 font-medium tracking-wider uppercase">
-            Mais Hóspedes
-          </span>
+        {/* Progress bar */}
+        <div className="flex gap-2">
+          {[1, 2, 3].map((s) => (
+            <div
+              key={s}
+              className={`h-1 flex-1 rounded-full transition-colors ${
+                s <= step ? 'bg-indigo-500' : 'bg-white/10'
+              }`}
+            />
+          ))}
+        </div>
+        <div className="flex justify-between mt-2 text-xs text-gray-500">
+          <span className={step >= 1 ? 'text-indigo-400' : ''}>{i.form.step1}</span>
+          <span className={step >= 2 ? 'text-indigo-400' : ''}>{i.form.step2}</span>
+          <span className={step >= 3 ? 'text-indigo-400' : ''}>{i.form.step3}</span>
+        </div>
+      </div>
+
+      {/* Welcome */}
+      <div className="w-full max-w-md mb-6 text-center">
+        <h2 className="text-2xl font-bold text-white mb-1">{i.form.welcome}</h2>
+        <p className="text-gray-400 text-sm">{i.form.subtitle}</p>
+      </div>
+
+      {/* Form card */}
+      <div className="glass-card p-6 w-full max-w-md">
+        {/* Step 1: Personal data */}
+        {step === 1 && (
+          <div className="space-y-5">
+            {/* Name */}
+            <div>
+              <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
+                <User className="w-4 h-4 text-indigo-400" />
+                {i.form.fullName}
+              </label>
+              <input
+                type="text"
+                className="input-dark w-full"
+                placeholder={i.form.fullNamePlaceholder}
+                value={form.full_name}
+                onChange={(e) => updateField('full_name', e.target.value)}
+                autoComplete="name"
+                autoFocus
+              />
+              {formErrors.full_name && (
+                <p className="text-red-400 text-xs mt-1">{formErrors.full_name}</p>
+              )}
+            </div>
+
+            {/* Phone with DDI */}
+            <div>
+              <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
+                <Phone className="w-4 h-4 text-indigo-400" />
+                {i.form.whatsapp}
+              </label>
+              <div className="flex gap-2">
+                <select
+                  className="input-dark w-[130px] shrink-0"
+                  value={form.ddi}
+                  onChange={(e) => {
+                    updateField('ddi', e.target.value)
+                    updateField('whatsapp_number', '')
+                  }}
+                >
+                  {DDI_OPTIONS.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.country} {opt.code}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="tel"
+                  className="input-dark flex-1 min-w-0"
+                  placeholder={i.form.whatsappPlaceholder}
+                  value={form.whatsapp_number}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  autoComplete="tel"
+                  inputMode="numeric"
+                />
+              </div>
+              {formErrors.whatsapp_number && (
+                <p className="text-red-400 text-xs mt-1">{formErrors.whatsapp_number}</p>
+              )}
+            </div>
+
+            {/* Email with suggestions */}
+            <div className="relative" ref={emailRef}>
+              <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
+                <Mail className="w-4 h-4 text-indigo-400" />
+                {i.form.email}
+              </label>
+              <input
+                type="email"
+                className="input-dark w-full"
+                placeholder={i.form.emailPlaceholder}
+                value={form.email}
+                onChange={(e) => handleEmailChange(e.target.value)}
+                onFocus={() => {
+                  if (emailSuggestions.length > 0) setShowEmailSuggestions(true)
+                }}
+                autoComplete="email"
+                inputMode="email"
+              />
+              {showEmailSuggestions && emailSuggestions.length > 0 && (
+                <div className="absolute z-10 left-0 right-0 mt-1 bg-[#0f1420] border border-white/10 rounded-lg overflow-hidden shadow-lg">
+                  {emailSuggestions.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className="block w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-white/5 transition-colors"
+                      onClick={() => selectEmailSuggestion(s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {formErrors.email && (
+                <p className="text-red-400 text-xs mt-1">{formErrors.email}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Stay dates */}
+        {step === 2 && (
+          <div className="space-y-5">
+            <div>
+              <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
+                <CalendarDays className="w-4 h-4 text-indigo-400" />
+                {i.form.checkinDate}
+              </label>
+              <input
+                type="date"
+                className="input-dark w-full"
+                value={form.checkin_date}
+                min={today}
+                onChange={(e) => updateField('checkin_date', e.target.value)}
+              />
+              {formErrors.checkin_date && (
+                <p className="text-red-400 text-xs mt-1">{formErrors.checkin_date}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
+                <CalendarDays className="w-4 h-4 text-indigo-400" />
+                {i.form.checkoutDate}
+              </label>
+              <input
+                type="date"
+                className="input-dark w-full"
+                value={form.checkout_date}
+                min={form.checkin_date || today}
+                onChange={(e) => updateField('checkout_date', e.target.value)}
+              />
+              {formErrors.checkout_date && (
+                <p className="text-red-400 text-xs mt-1">{formErrors.checkout_date}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-300 mb-1.5 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-indigo-400" />
+                {i.form.guestCount}
+              </label>
+              <input
+                type="number"
+                className="input-dark w-full"
+                placeholder={i.form.guestCountPlaceholder}
+                value={form.guest_count}
+                min="1"
+                max="20"
+                onChange={(e) => updateField('guest_count', e.target.value)}
+                inputMode="numeric"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Confirmation */}
+        {step === 3 && (
+          <div className="space-y-5">
+            {/* Summary */}
+            <div className="bg-white/5 rounded-xl p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">{i.form.fullName}</span>
+                <span className="text-white">{form.full_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">{i.form.whatsapp}</span>
+                <span className="text-white">
+                  {form.ddi} {form.whatsapp_number}
+                </span>
+              </div>
+              {form.email && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">E-mail</span>
+                  <span className="text-white">{form.email}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">{i.form.checkinDate}</span>
+                <span className="text-white">{form.checkin_date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">{i.form.checkoutDate}</span>
+                <span className="text-white">{form.checkout_date}</span>
+              </div>
+              {form.guest_count && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">{i.form.guestCount}</span>
+                  <span className="text-white">{form.guest_count}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Consent */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-gray-600 bg-transparent text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                checked={form.consent}
+                onChange={(e) => updateField('consent', e.target.checked)}
+              />
+              <span className="text-sm text-gray-300">{i.form.consent}</span>
+            </label>
+            {formErrors.consent && (
+              <p className="text-red-400 text-xs">{formErrors.consent}</p>
+            )}
+
+            {/* Privacy */}
+            <div className="flex items-start gap-2 text-xs text-gray-500">
+              <Shield className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{i.form.privacyNotice}</span>
+            </div>
+
+            {submitError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-sm text-red-400">
+                {submitError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Navigation buttons */}
+        <div className="flex gap-3 mt-6">
+          {step > 1 && (
+            <button
+              type="button"
+              className="btn-glass flex items-center justify-center gap-1 py-3 px-4 rounded-xl text-sm flex-1"
+              onClick={prevStep}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              {i.form.back}
+            </button>
+          )}
+          {step < 3 && (
+            <button
+              type="button"
+              className="btn-primary flex items-center justify-center gap-1 py-3 px-4 rounded-xl text-sm flex-1"
+              onClick={nextStep}
+            >
+              {i.form.next}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+          {step === 3 && (
+            <button
+              type="button"
+              className="btn-primary flex items-center justify-center gap-1 py-3 px-4 rounded-xl text-sm flex-1 disabled:opacity-50"
+              onClick={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {i.form.submitting}
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  {i.form.submit}
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

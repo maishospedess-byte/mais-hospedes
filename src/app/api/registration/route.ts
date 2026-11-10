@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data
-    const supabase = await createServiceSupabase()
+    const supabase = createServiceSupabase()
 
     // 1. Find hotel by slug
     const { data: hotel, error: hotelError } = await supabase

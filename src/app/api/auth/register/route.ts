@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createServiceSupabase()
+    const supabase = createServiceSupabase()
 
     // 1. Create auth user
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({

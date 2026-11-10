@@ -4,6 +4,7 @@ import { useState, Suspense } from 'react'
 import { createBrowserSupabase } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { Eye, EyeOff, LogIn, Loader2 } from 'lucide-react'
 
 function LoginForm() {
   const [email, setEmail] = useState('')
@@ -41,17 +42,42 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F1729] p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{ background: 'var(--bg)' }}>
+      {/* Background orbs */}
+      <div className="orb" style={{ width: 400, height: 400, top: -100, left: -100, background: 'rgba(79,70,229,.14)' }} />
+      <div className="orb" style={{ width: 300, height: 300, bottom: -50, right: -50, background: 'rgba(167,139,250,.08)', animationDelay: '3s' }} />
+
+      {/* Mesh gradient */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse 50% 50% at 50% 30%, rgba(79,70,229,.1), transparent 70%)'
+      }} />
+
+      <div className="glass-card p-10 max-w-[420px] w-full relative z-10 hover:transform-none" style={{
+        background: 'rgba(15,21,40,.7)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+      }}>
         {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-indigo-600">Mais Hóspedes</h1>
-          <p className="text-gray-400 text-sm mt-1">Painel do hotel</p>
+          <div className="flex items-center gap-[10px] justify-center mb-3">
+            <svg viewBox="0 0 40 40" fill="none" width="40" height="40">
+              <rect width="40" height="40" rx="10" fill="url(#lg3)" />
+              <defs><linearGradient id="lg3" x1="0" y1="0" x2="40" y2="40"><stop stopColor="#6366F1" /><stop offset="1" stopColor="#4F46E5" /></linearGradient></defs>
+              <path d="M11 10h6v8h10v-8h6v20h-6v-8H17v8h-6z" fill="#fff" />
+              <rect x="18" y="22" width="4" height="6" rx="1" fill="rgba(255,255,255,.5)" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-extrabold" style={{
+            fontFamily: "'Plus Jakarta Sans', sans-serif"
+          }}>
+            Mais<em className="not-italic" style={{ color: 'var(--bb)' }}>Hóspedes</em>
+          </h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--fg3)' }}>Acesse o painel do seu hotel</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--fg2)' }}>
               E-mail
             </label>
             <input
@@ -60,13 +86,13 @@ function LoginForm() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 bg-white"
+              className="input-dark"
               placeholder="seu@email.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--fg2)' }}>
               Senha
             </label>
             <div className="relative">
@@ -76,21 +102,27 @@ function LoginForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition pr-12 text-gray-900 bg-white"
+                className="input-dark pr-12"
                 placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition text-sm"
+                className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors"
+                style={{ color: 'var(--fg3)' }}
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
               >
-                {showPassword ? '🙈' : '👁️'}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-sm">
+            <div className="rounded-xl p-3 text-sm" style={{
+              background: 'rgba(239,68,68,.1)',
+              border: '1px solid rgba(239,68,68,.2)',
+              color: '#f87171'
+            }}>
               {error}
             </div>
           )}
@@ -98,16 +130,26 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition shadow-sm disabled:opacity-50"
+            className="btn-primary w-full justify-center !py-[14px] !rounded-xl disabled:opacity-50"
           >
-            {loading ? 'Entrando...' : 'Entrar'}
+            {loading ? (
+              <span className="flex items-center gap-2 justify-center">
+                <Loader2 size={18} className="animate-spin" />
+                Entrando...
+              </span>
+            ) : (
+              <span className="flex items-center gap-2 justify-center">
+                <LogIn size={18} />
+                Entrar
+              </span>
+            )}
           </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-gray-100 text-center">
-          <p className="text-sm text-gray-500">
+        <div className="mt-8 pt-6 text-center" style={{ borderTop: '1px solid var(--glass-border)' }}>
+          <p className="text-sm" style={{ color: 'var(--fg3)' }}>
             Não tem conta?{' '}
-            <Link href="/register" className="text-indigo-600 font-medium hover:underline">
+            <Link href="/register" className="font-semibold transition-colors" style={{ color: 'var(--bb)' }}>
               Crie grátis
             </Link>
           </p>
@@ -120,8 +162,8 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-[#0F1729]">
-        <div className="animate-pulse w-10 h-10 rounded-full bg-indigo-500/30" />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <div className="w-10 h-10 rounded-full animate-pulse" style={{ background: 'rgba(99,102,241,.3)' }} />
       </div>
     }>
       <LoginForm />

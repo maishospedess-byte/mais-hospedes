@@ -13,8 +13,8 @@ export const config = {
      * - _next/image (image optimization)
      * - favicon.ico (favicon)
      * - public assets
-     * - api routes that handle their own auth
+     * - api routes (handle their own auth via service role)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/|h/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
