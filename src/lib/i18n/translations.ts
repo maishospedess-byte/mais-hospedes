@@ -1,4 +1,4 @@
-export type Locale = 'pt-BR' | 'es'
+export type Locale = 'pt-BR' | 'es' | 'en'
 
 export const translations = {
   'pt-BR': {
@@ -103,6 +103,59 @@ export const translations = {
     },
     language: {
       label: 'Idioma',
+      ptBR: 'Português',
+      es: 'Español',
+    },
+  },
+  en: {
+    form: {
+      welcome: 'Welcome!',
+      subtitle: 'Register in less than 1 minute and make your stay even better.',
+      step1: 'Your details',
+      step2: 'Your stay',
+      step3: 'Confirmation',
+      fullName: 'Full name',
+      fullNamePlaceholder: 'Your full name',
+      whatsapp: 'WhatsApp',
+      whatsappPlaceholder: 'Phone number',
+      email: 'Email (optional)',
+      emailPlaceholder: 'you@email.com',
+      checkinDate: 'Check-in date',
+      checkoutDate: 'Check-out date',
+      guestCount: 'Number of guests',
+      guestCountPlaceholder: 'E.g. 2',
+      consent: 'I agree to receive WhatsApp messages about my stay',
+      privacyNotice: 'Your data is protected and used only for communications about your stay.',
+      next: 'Next',
+      back: 'Back',
+      submit: 'Submit registration',
+      submitting: 'Sending...',
+      phoneInvalid: 'Invalid number. Please check the format.',
+    },
+    success: {
+      title: 'Registration sent!',
+      message: 'Your registration was received. The front desk will confirm your stay shortly.',
+      note: 'This registration does not confirm your reservation or stay.',
+      followInstagram: 'Follow us on Instagram',
+      saveContact: 'Save our WhatsApp',
+    },
+    errors: {
+      nameRequired: 'Name is required',
+      nameTooLong: 'Name is too long',
+      whatsappInvalid: 'Invalid WhatsApp number',
+      emailInvalid: 'Invalid email',
+      checkinRequired: 'Check-in date is required',
+      checkoutRequired: 'Check-out date is required',
+      checkoutBeforeCheckin: 'Check-out date must be after check-in date',
+      consentRequired: 'Consent is required to continue',
+      hotelNotFound: 'Hotel not found. Check the link or ask the front desk for a new QR code.',
+      hotelInactive: 'This hotel is not active at the moment',
+      submitError: 'Error sending registration. Please try again.',
+      duplicateRegistration: 'You already have an active registration at this hotel.',
+      connectionError: 'Connection error. Check your internet and try again.',
+    },
+    language: {
+      label: 'Language',
       ptBR: 'Português',
       es: 'Español',
     },

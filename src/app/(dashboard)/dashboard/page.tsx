@@ -1,436 +1,376 @@
 'use client'
 
-import { useHotel } from '@/hooks/useHotel'
-import { useRealtimeRegistrations, type RegistrationWithGuest } from '@/hooks/useRealtimeRegistrations'
-import { createBrowserSupabase } from '@/lib/supabase/client'
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
-  BellRing, Bell, BellOff, Phone, CalendarDays, ClipboardList, Check
+  BellRing, Bell, BellOff, Phone, CalendarDays, Send, LogIn, Ban, LogOut, RotateCw, Search,
+  AlertTriangle, Clock, Users as UsersIcon, Mail, ClipboardList, CheckCircle2, Info,
 } from 'lucide-react'
+import { useHotel } from '@/hooks/useHotel'
+import { useHotelRealtime } from '@/hooks/useHotelRealtime'
+import { PageHeader, Badge, PageLoading, EmptyState, useToast } from '@/components/ui/kit'
+import { STAY_STATUS, MSG_STATUS, AUTOMATION_LABEL, stayKey, fmtDate, fmtPhone, fmtTime, timeAgo } from '@/lib/ui/status'
+import { WELCOME_DELAY_SECONDS } from '@/lib/automations/definitions'
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-  })
+type Msg = { id: string; automation_type: string | null; status: string; scheduled_for: string | null; sent_at: string | null; failure_reason: string | null; created_at: string }
+type Item = {
+  registration: { id: string; status: string; created_at: string; checkin_date: string; checkout_date: string; guest_count: number | null; block_reason: string | null }
+  guest: { id: string; full_name: string; whatsapp_number: string; email: string | null; language: string }
+  stay: { id: string; status: string; checkin_date: string; checkout_date: string; confirmed_at: string | null; completed_at: string | null } | null
+  welcome: Msg | null
+  lastMessage: Msg | null
+  messages: Msg[]
 }
 
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'agora'
-  if (mins < 60) return `${mins}min`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  return `${days}d`
+/** Toca um "bip" curto com Web Audio (mais confiável que arquivo de áudio) */
+function beep() {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new Ctx()
+    const o = ctx.createOscillator(); const g = ctx.createGain()
+    o.type = 'sine'; o.frequency.value = 880
+    g.gain.setValueAtTime(0.0001, ctx.currentTime)
+    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02)
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35)
+    o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.4)
+    setTimeout(() => {
+      const o2 = ctx.createOscillator(); const g2 = ctx.createGain()
+      o2.frequency.value = 1175; g2.gain.setValueAtTime(0.0001, ctx.currentTime)
+      g2.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.02)
+      g2.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3)
+      o2.connect(g2); g2.connect(ctx.destination); o2.start(); o2.stop(ctx.currentTime + 0.35)
+    }, 180)
+  } catch { /* navegador sem suporte a áudio */ }
 }
 
-function RegistrationCard({
-  reg,
-  isNew,
-  onConfirm,
-  onBlock,
-  onComplete,
-  actionLoading,
-  countdown,
-}: {
-  reg: RegistrationWithGuest
-  isNew: boolean
-  onConfirm: (reg: RegistrationWithGuest) => void
-  onBlock: (reg: RegistrationWithGuest) => void
-  onComplete: (reg: RegistrationWithGuest) => void
-  actionLoading: string | null
-  countdown?: number
-}) {
-  const isPending = reg.status === 'registration_pending'
-  const isActive = reg.stay?.status === 'stay_active'
-  const isCompleted = reg.stay?.status === 'stay_completed'
-  const isBlocked = reg.status === 'registration_blocked'
-  const isLoading = actionLoading === reg.id
-
-  const statusConfig = isPending
-    ? { bg: 'rgba(245,158,11,.15)', text: '#FBBF24', label: 'Aguardando' }
-    : isActive
-    ? { bg: 'rgba(37,211,102,.15)', text: '#25D366', label: 'Hospedado' }
-    : isCompleted
-    ? { bg: 'rgba(100,116,139,.15)', text: '#94A3B8', label: 'Checkout' }
-    : isBlocked
-    ? { bg: 'rgba(239,68,68,.15)', text: '#F87171', label: 'Bloqueado' }
-    : { bg: 'rgba(100,116,139,.15)', text: '#94A3B8', label: reg.status }
-
-  return (
-    <div>
-      {isPending && countdown != null && countdown > 0 && (
-        <div className="flex items-center gap-2 mb-2 ml-1">
-          <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(239,68,68,.15)' }}>
-            <div className="h-full rounded-full transition-all" style={{
-              width: `${(countdown / 50) * 100}%`,
-              background: countdown < 10 ? '#EF4444' : '#FBBF24',
-            }} />
-          </div>
-          <span className="text-xs font-mono font-bold" style={{
-            color: countdown < 10 ? '#EF4444' : '#FBBF24',
-          }}>
-            {countdown}s
-          </span>
-          <span className="text-xs" style={{ color: 'var(--fg3)' }}>para mensagem automática</span>
-        </div>
-      )}
-      <div
-        className={`glass-card p-5 hover:translate-y-0 transition-all ${
-          isNew ? 'ring-2 ring-red-500/50' : ''
-        }`}
-        style={isNew ? { borderColor: 'rgba(239,68,68,.4)' } : undefined}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold truncate">{reg.guest.full_name}</h3>
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium" style={{
-                background: statusConfig.bg,
-                color: statusConfig.text,
-              }}>
-                {statusConfig.label}
-              </span>
-              {isNew && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-bold animate-pulse" style={{
-                  background: 'rgba(239,68,68,.2)',
-                  color: '#F87171',
-                }}>
-                  NOVO
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-3 mt-1.5 text-sm flex-wrap" style={{ color: 'var(--fg2)' }}>
-              <span className="inline-flex items-center gap-1"><Phone size={13} className="shrink-0" /> {reg.guest.whatsapp_number}</span>
-              <span className="inline-flex items-center gap-1"><CalendarDays size={13} className="shrink-0" /> {formatDate(reg.checkin_date)} → {formatDate(reg.checkout_date)}</span>
-            </div>
-            <div className="flex items-center gap-3 mt-1 text-xs flex-wrap" style={{ color: 'var(--fg3)' }}>
-              <span>Registrado {timeAgo(reg.created_at)}</span>
-              {reg.guest_count && <span>{reg.guest_count} hóspede(s)</span>}
-              {reg.guest.email && <span>{reg.guest.email}</span>}
-              <span className="uppercase">{reg.guest.language}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {isPending && (
-              <>
-                <button
-                  onClick={() => onConfirm(reg)}
-                  disabled={isLoading}
-                  className="px-4 py-2 text-sm font-semibold rounded-xl transition-all disabled:opacity-50"
-                  style={{
-                    background: 'linear-gradient(135deg, #25D366, #128C7E)',
-                    color: '#fff',
-                    boxShadow: '0 2px 10px rgba(37,211,102,.3)',
-                  }}
-                >
-                  {isLoading ? '...' : <span className="inline-flex items-center gap-1"><Check size={14} /> Confirmar</span>}
-                </button>
-                <button
-                  onClick={() => onBlock(reg)}
-                  disabled={isLoading}
-                  className="px-3 py-2 text-sm font-medium rounded-xl transition-all disabled:opacity-50"
-                  style={{
-                    background: 'rgba(239,68,68,.1)',
-                    color: '#F87171',
-                    border: '1px solid rgba(239,68,68,.2)',
-                  }}
-                >
-                  Bloquear
-                </button>
-              </>
-            )}
-            {isActive && (
-              <button
-                onClick={() => onComplete(reg)}
-                disabled={isLoading}
-                className="btn-primary !py-2 !px-4 !text-sm !rounded-xl disabled:opacity-50"
-              >
-                {isLoading ? '...' : 'Finalizar estadia'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+function useNow(ms = 1000) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(id) }, [ms])
+  return now
 }
 
-export default function DashboardPage() {
+export default function ReceptionPage() {
   const { hotel, loading: hotelLoading } = useHotel()
-  const {
-    registrations,
-    loading: regsLoading,
-    newRegistrationId,
-    soundEnabled,
-    setSoundEnabled,
-    audioRef,
-  } = useRealtimeRegistrations(hotel?.id)
-  const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const [countdown, setCountdown] = useState<Record<string, number>>({})
+  const [items, setItems] = useState<Item[]>([])
+  const [waConnected, setWaConnected] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [newIds, setNewIds] = useState<Set<string>>(new Set())
+  const [sound, setSound] = useState(true)
+  const [q, setQ] = useState('')
+  const toast = useToast()
+  const soundRef = useRef(sound)
+  soundRef.current = sound
 
-  // Countdown timer for pending registrations (50s welcome message timer)
-  useEffect(() => {
-    const pending = registrations.filter(r => r.status === 'registration_pending')
-    const interval = setInterval(() => {
-      const newCountdown: Record<string, number> = {}
-      pending.forEach(reg => {
-        const elapsed = (Date.now() - new Date(reg.created_at).getTime()) / 1000
-        const remaining = Math.max(0, 50 - elapsed)
-        if (remaining > 0) newCountdown[reg.id] = Math.ceil(remaining)
-      })
-      setCountdown(newCountdown)
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [registrations])
+  useEffect(() => { try { setSound(localStorage.getItem('mh-sound') !== 'off') } catch { /* */ } }, [])
 
-  async function confirmRegistration(reg: RegistrationWithGuest) {
-    if (actionLoading) return
-    setActionLoading(reg.id)
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/reception', { cache: 'no-store' })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Erro ao carregar')
+      setItems(body.items)
+      setWaConnected(body.whatsappConnected)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro de conexão')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-    const supabase = createBrowserSupabase()
-    const { data: { user } } = await supabase.auth.getUser()
+  useEffect(() => { load() }, [load])
+  // ressincronização periódica (caso o tempo real caia)
+  useEffect(() => { const id = setInterval(load, 30000); return () => clearInterval(id) }, [load])
 
-    await supabase.from('stays').insert({
-      hotel_id: reg.hotel_id,
-      registration_id: reg.id,
-      guest_id: reg.guest_id,
-      status: 'stay_active',
-      checkin_date: reg.checkin_date,
-      checkout_date: reg.checkout_date,
-      confirmed_by: user?.id || null,
-      confirmed_at: new Date().toISOString(),
-    })
+  useHotelRealtime(hotel?.id, (evt) => {
+    if (evt.table === 'registrations' && evt.type === 'INSERT') {
+      const id = String(evt.record.id)
+      setNewIds(prev => new Set(prev).add(id))
+      if (soundRef.current) beep()
+      setTimeout(() => setNewIds(prev => { const n = new Set(prev); n.delete(id); return n }), 60000)
+    }
+    load()
+  })
 
-    setActionLoading(null)
+  async function act(key: string, payload: Record<string, unknown>, okText: string) {
+    setBusy(key)
+    try {
+      const res = await fetch('/api/reception', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Não foi possível concluir')
+      const r = body.result as { status: string; reason?: string } | null
+      if (r && r.status === 'failed') toast.show(`${okText} Porém a mensagem NÃO foi enviada: ${r.reason}`, 'warn')
+      else if (r && r.status === 'sent') toast.show(`${okText} Mensagem enviada pelo WhatsApp.`, 'success')
+      else if (r && r.status === 'cancelled') toast.show(`${okText} Mensagem cancelada: ${r.reason}`, 'warn')
+      else toast.show(okText, 'success')
+      await load()
+    } catch (e) {
+      toast.show(e instanceof Error ? e.message : 'Erro', 'danger')
+    } finally {
+      setBusy(null)
+    }
   }
 
-  async function blockRegistration(reg: RegistrationWithGuest) {
-    if (actionLoading) return
-    setActionLoading(reg.id)
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase()
+    const digits = term.replace(/\D/g, '')
+    return term ? items.filter(i => i.guest.full_name.toLowerCase().includes(term) || (digits.length >= 3 && i.guest.whatsapp_number.includes(digits))) : items
+  }, [items, q])
 
-    const supabase = createBrowserSupabase()
-    const { data: { user } } = await supabase.auth.getUser()
+  const groups = useMemo(() => ({
+    pending: filtered.filter(i => stayKey(i.registration.status, i.stay?.status) === 'pending'),
+    active: filtered.filter(i => stayKey(i.registration.status, i.stay?.status) === 'active'),
+    done: filtered.filter(i => ['completed', 'blocked'].includes(stayKey(i.registration.status, i.stay?.status))),
+  }), [filtered])
 
-    await supabase
-      .from('registrations')
-      .update({
-        status: 'registration_blocked',
-        blocked_by: user?.id || null,
-        blocked_at: new Date().toISOString(),
-        block_reason: 'Bloqueado pela recepção',
-      })
-      .eq('id', reg.id)
-
-    // Cancel scheduled welcome message
-    await supabase
-      .from('messages')
-      .update({ status: 'cancelled' })
-      .eq('idempotency_key', `welcome-${reg.id}`)
-      .eq('status', 'scheduled')
-
-    setActionLoading(null)
-  }
-
-  async function completeStay(reg: RegistrationWithGuest) {
-    if (actionLoading || !reg.stay) return
-    setActionLoading(reg.id)
-
-    const supabase = createBrowserSupabase()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    await supabase
-      .from('stays')
-      .update({
-        status: 'stay_completed',
-        completed_by: user?.id || null,
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', reg.stay.id)
-
-    // Schedule satisfaction survey
-    await supabase.from('messages').insert({
-      hotel_id: reg.hotel_id,
-      guest_id: reg.guest_id,
-      stay_id: reg.stay.id,
-      direction: 'outbound',
-      status: 'scheduled',
-      automation_type: 'satisfaction_survey',
-      language: reg.guest.language,
-      scheduled_for: new Date().toISOString(),
-      idempotency_key: `satisfaction-${reg.stay.id}`,
-    })
-
-    setActionLoading(null)
-  }
-
-  // Categorize registrations
-  const pending = registrations.filter((r) => r.status === 'registration_pending')
-  const active = registrations.filter((r) => r.stay?.status === 'stay_active')
-  const completed = registrations.filter(
-    (r) => r.stay?.status === 'stay_completed' || r.status === 'registration_blocked'
-  )
-
-  if (hotelLoading || regsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
-        <div className="w-10 h-10 rounded-full animate-pulse" style={{ background: 'rgba(99,102,241,.3)' }} />
-      </div>
-    )
-  }
-
-  if (!hotel) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
-        <div className="glass-card p-8 text-center max-w-sm">
-          <p style={{ color: 'var(--fg2)' }}>Nenhum hotel associado à sua conta.</p>
-        </div>
-      </div>
-    )
-  }
+  if (hotelLoading || loading) return <PageLoading />
+  if (!hotel) return <EmptyState icon={ClipboardList} title="Nenhum hotel associado à sua conta." />
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      {/* Notification sound */}
-      <audio ref={audioRef} preload="auto">
-        <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1hZ2lugYB8fHp9gIWMkI2JhX95cWliX2Fob3d/hYiJiYmHhYB5cWpiXF5ka3N7goiLjIuJhYB5cGhgW11ib3N8g4mMjYuIhH93bWRcWVxhbHR8goiMjYuIhH93bWRcW1tga3J7goeLjIuJhYB5cGhgXF1hanJ7goiLjIuIhH54bmZeWltfaHB5gIaKjIuIhH54bWVdWlpeZ295gIaKjIuIhH93bWReWlpdZm93f4WJi4uIhH53bWRcWVtdZm52foSIi4uIhH53bGNbWFpcZW12fYOHiouIhH53bGNbWFpcZG11fIKGiYqHg393a2JaV1lbZGx0e4GFiImHg353a2JaV1lbY2t0eoGFh4mGg353amFZVlhbYmt0eoGFh4iGg352amFZVlhaYmt0eoGFh4iFgn52amFZV1haYmt0eoGFh4iFgn51aWBYVlhbYmt0e4KGiIiFgn51aWBYV1hbYmt0e4KGiIiFgn51aWBYV1hbYmt0e4KGiIiFgn51aV9XV1hbYmt0e4KGiIiFgn5zaF5WVVdZYWl0e4KGiIiFgn5zaF5WVVdZYWl0e4KGh4iFgn5zaF5WVVdZYWl0eoGGh4iFgX5zaF5WVVdZYWl0eoGGh4eFgX5yaF5WVVdZYWl0eoGFh4eFgX5yaF5WVVdZYWl0eoGFhoeFgX5yaF5WVVdZYGl0eoGFhoeFgX5yaF5WVVdZYGl0eoGFhoeFgX5yaF5WVFdYYGhzeoGFhoeFgX5xaF5WVFdYYGhzeoGFhoaEgX5xZ15WVFdYYGhzeoGFhoaEgX5xZ11VVFdYYGhzeoCFhoaEgH5xZ11VU1ZXYGhyeoCEhYaEgH5xZ11VU1ZXYGhyeoCEhYaEgH5wZl1UU1ZXYGdyeoCEhYWEgH5wZl1UU1ZXX2dyeYCEhYWEgH5wZlxUU1VXX2dyeYCEhYWDgH5wZlxUU1VXX2dyeYCEhYWDgH5wZlxTU1VWX2dxeYCDhIWDf31wZVtTUlVWX2dxeYCDhIWDf31vZVtTUlVWX2dxeH+DhISDf31vZVtTUlRWXmdxeH+DhISDf31vZVtSUVRWXmdxeH+DhISDf31vZVpSUVRWXmdweH+ChISDf3xvZFpSUVRVXmZweH+ChIOCfnxuZFpRUFNVXmZwd3+ChIOCfnxuZFpRUFNVXmZwd3+ChIOCfnxuZFpRUFNVXmZwd3+ChIOCfnxuY1lRUFNVXmZwd3+ChIOCfnxuY1lRUFNVXmZwd3+BhIOCfnxuY1lRUFNVXWZwd36BhIOCfnxuY1lQT1JUXWVwd36BhIOBfnxuY1lQT1JUXWVwd36BhIKBfXttY1lQT1JUXWVvdn6BhIKBfXttYlhPTlFUXWVvdn6Bg4KBfXttYlhPTlFTXWVvdn6Bg4KBfXttYlhPTlFTXGRvdn6Bg4KBfXtrYlhPTlFTXGRudn2Bg4KBfHtrYVhOTVBTXGRudn2Bg4GAfHtrYVdOTVBSXGRudn2Ag4GAfHtrYVdOTVBSXGRudX2Ag4F/fHtrYVdOTVBSW2NudX2Ag4F/e3prYFdNTFBSW2NudX2Ag4F/e3pqYFdNTFBSW2NtdXyAgoF/e3pqYFZNTFBSW2NtdXyAgoF/e3pqYFZNTE9RW2NtdXyAgoB/e3pqYFZNTE9RW2JtdXyAgoB/e3pqYFZMTE9RWmJtdHyAgoB+e3lqX1ZMTE9RWmJsdHyAgoB+enpqX1ZMTE9RWmJsdHuAgn9+enppX1ZMS09RWmJsdHuAgn9+enpqX1ZMS09QWmFsdHuAgn99enpqX1ZMS09QWmFrdHuAgn99enpqX1ZMS09QWmFrdHuAgn99eXlpXlVLS05QWmFrdHuAgnx9eXlpXlVLS05QWmFrdHuAgnx8eHlpXlVLS05QWWBrdHt/gXx8eHlpXlVLS05PWWBrdHt/gXx8eHhoXlVLS05PWWBrdHt/gXx8eHhoXlVLS05PWWBqc3t/gXt8eHhoXlVLSk5PWWBqc3t/gXt8d3hoXlVLSk5PWWBqc3p/gXt7d3hoXlVLSk5PWWBqc3p/gXt7d3doXVRLSk5PWGBqc3p/gHt7d3doXVRLSk1OWGBqc3p/gHt7d3dnXVRKSk1OWGBqcnp+gHt7d3dnXVRKSk1OV2Bpcnp+gHp7d3dnXVRKSk1OV19pcnp+gHp6dnZnXFRKSU1OV19pcnl+gHp6dnZnXFNKSU1OV19pcnl+gHp6dnZnXFNJSU1OV19pcnl+f3p6dnZnXFNJSU1OV19pcnl+f3p6dnZmXFNJSU1NVl9ocnl+f3p5dnZmXFNJSU1NVl9ocnl+f3l5dXZmW1NJSE1NVl5ocXh9f3l5dXVmW1NJSE1NVl5ocXh9f3l5dXVmW1NJSE1NVl5ocXh9f3l5dXVmW1NJSE1NVl5ocXh9fnl5dXVmW1NJSE1NVl5ocXh9fnl5dXVmW1NJSE0=" type="audio/wav" />
-      </audio>
+    <div className="theme-scope">
+      <PageHeader icon={BellRing} title="Recepção" subtitle="Cadastros do QR Code em tempo real"
+        actions={
+          <>
+            <div className="relative">
+              <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--fg3)' }} />
+              <input className="ui-input !pl-8 !py-2 w-[200px]" placeholder="Buscar nome ou telefone" value={q} onChange={e => setQ(e.target.value)} />
+            </div>
+            <button className="ui-btn ui-btn-secondary" onClick={() => { const v = !sound; setSound(v); try { localStorage.setItem('mh-sound', v ? 'on' : 'off') } catch { /* */ } if (v) beep() }}
+              title={sound ? 'Silenciar alerta sonoro' : 'Ativar alerta sonoro'}>
+              {sound ? <><Bell size={15} /> Som ligado</> : <><BellOff size={15} /> Som desligado</>}
+            </button>
+          </>
+        } />
 
-      {/* Page header */}
-      <div className="px-6 py-5 flex items-center justify-between" style={{
-        borderBottom: '1px solid var(--glass-border)',
-      }}>
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-            <BellRing size={22} className="shrink-0" style={{ color: 'var(--bb)' }} />
-            Recepção
-          </h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--fg3)' }}>{hotel.name} · Registros em tempo real</p>
-        </div>
-        <button
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          className="text-sm px-3 py-1.5 rounded-lg transition-colors"
-          style={{
-            background: soundEnabled ? 'rgba(245,158,11,.1)' : 'rgba(100,116,139,.1)',
-            color: soundEnabled ? 'var(--star)' : 'var(--fg3)',
-          }}
-          title={soundEnabled ? 'Silenciar notificações' : 'Ativar som'}
-        >
-          {soundEnabled ? <span className="inline-flex items-center gap-1.5"><Bell size={14} /> Som ativo</span> : <span className="inline-flex items-center gap-1.5"><BellOff size={14} /> Silenciado</span>}
-        </button>
-      </div>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 space-y-5">
+        {!waConnected && (
+          <div className="ui-card-flat p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'var(--danger)', background: 'var(--danger-bg)' }}>
+            <AlertTriangle size={18} style={{ color: 'var(--danger)' }} />
+            <div className="flex-1 min-w-[220px] text-sm">
+              <b>WhatsApp ainda não conectado.</b> Os cadastros continuam chegando, mas nenhuma mensagem será enviada até a conexão com a Meta. Envios tentados aparecem como <b>Falha no envio</b>.
+            </div>
+            <Link href="/automations" className="ui-btn ui-btn-primary ui-btn-sm">Conectar WhatsApp</Link>
+          </div>
+        )}
+        {error && <div className="ui-card-flat p-3 text-sm" style={{ color: 'var(--danger)' }}>Erro ao atualizar: {error}. Tentando novamente…</div>}
 
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-3">
           {[
-            { label: 'Aguardando', value: pending.length, color: 'var(--star)', pulse: pending.length > 0 },
-            { label: 'Hospedados', value: active.length, color: 'var(--green)', pulse: false },
-            { label: 'Finalizados', value: completed.length, color: 'var(--fg3)', pulse: false },
+            { label: 'Aguardando check-in', value: groups.pending.length, tone: 'warn' },
+            { label: 'Hospedados agora', value: groups.active.length, tone: 'success' },
+            { label: 'Finalizados / bloqueados', value: groups.done.length, tone: 'neutral' },
           ].map(s => (
-            <div key={s.label} className="glass-card p-5 text-center hover:translate-y-0" style={
-              s.pulse ? { animation: 'cardGlow 3s ease-in-out infinite' } : undefined
-            }>
-              <div className="text-3xl font-black" style={{
-                fontFamily: "'Plus Jakarta Sans', sans-serif",
-                color: s.color,
-              }}>{s.value}</div>
-              <div className="text-xs mt-1" style={{ color: 'var(--fg3)' }}>{s.label}</div>
+            <div key={s.label} className="ui-card-flat p-3 sm:p-4">
+              <div className="text-2xl font-extrabold" style={{ color: `var(--${s.tone})`, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{s.value}</div>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--fg3)' }}>{s.label}</div>
             </div>
           ))}
         </div>
 
-        {/* Pending */}
-        {pending.length > 0 && (
-          <section>
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2" style={{
-              fontFamily: "'Plus Jakarta Sans', sans-serif"
-            }}>
-              <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: 'var(--star)' }} />
-              Aguardando confirmação ({pending.length})
-            </h2>
-            <div className="space-y-3">
-              {pending.map((reg) => (
-                <RegistrationCard
-                  key={reg.id}
-                  reg={reg}
-                  isNew={reg.id === newRegistrationId}
-                  onConfirm={confirmRegistration}
-                  onBlock={blockRegistration}
-                  onComplete={completeStay}
-                  actionLoading={actionLoading}
-                  countdown={countdown[reg.id]}
-                />
-              ))}
-            </div>
-          </section>
-        )}
+        <HowItWorks />
 
-        {/* Active stays */}
-        {active.length > 0 && (
-          <section>
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2" style={{
-              fontFamily: "'Plus Jakarta Sans', sans-serif"
-            }}>
-              <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--green)' }} />
-              Hospedados ({active.length})
-            </h2>
-            <div className="space-y-3">
-              {active.map((reg) => (
-                <RegistrationCard
-                  key={reg.id}
-                  reg={reg}
-                  isNew={false}
-                  onConfirm={confirmRegistration}
-                  onBlock={blockRegistration}
-                  onComplete={completeStay}
-                  actionLoading={actionLoading}
-                />
-              ))}
-            </div>
-          </section>
-        )}
+        <Group title="Novos cadastros — aguardando check-in" tone="warn" count={groups.pending.length}
+          empty="Nenhum cadastro pendente. Quando um hóspede escanear o QR Code, ele aparece aqui na hora, com alerta sonoro.">
+          {groups.pending.map(i => <Card key={i.registration.id} item={i} isNew={newIds.has(i.registration.id)} busy={busy} act={act} />)}
+        </Group>
 
-        {/* Completed */}
-        {completed.length > 0 && (
-          <section>
-            <h2 className="text-lg font-bold mb-4" style={{
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              color: 'var(--fg2)'
-            }}>
-              Checkout / Bloqueado ({completed.length})
-            </h2>
-            <div className="space-y-3 opacity-60">
-              {completed.map((reg) => (
-                <RegistrationCard
-                  key={reg.id}
-                  reg={reg}
-                  isNew={false}
-                  onConfirm={confirmRegistration}
-                  onBlock={blockRegistration}
-                  onComplete={completeStay}
-                  actionLoading={actionLoading}
-                />
-              ))}
-            </div>
-          </section>
-        )}
+        <Group title="Hospedados" tone="success" count={groups.active.length} empty="Nenhum hóspede com check-in confirmado no momento.">
+          {groups.active.map(i => <Card key={i.registration.id} item={i} isNew={false} busy={busy} act={act} />)}
+        </Group>
 
-        {registrations.length === 0 && (
-          <div className="text-center py-16">
-            <div className="w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{
-              background: 'rgba(99,102,241,.06)'
-            }}><ClipboardList size={36} style={{ color: 'var(--fg3)' }} /></div>
-            <p className="font-medium text-lg" style={{ color: 'var(--fg2)' }}>Nenhum registro nos últimos 7 dias</p>
-            <p className="text-sm mt-2" style={{ color: 'var(--fg3)' }}>
-              Quando um hóspede escanear o QR Code, aparecerá aqui em tempo real.
-            </p>
+        <Group title="Finalizados e bloqueados (últimos 14 dias)" tone="neutral" count={groups.done.length} empty="Nada por aqui ainda." collapsed>
+          {groups.done.map(i => <Card key={i.registration.id} item={i} isNew={false} busy={busy} act={act} />)}
+        </Group>
+      </div>
+      {toast.node}
+    </div>
+  )
+}
+
+function HowItWorks() {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="ui-subtle px-4 py-3 text-[13px]">
+      <button className="flex items-center gap-2 font-semibold w-full text-left" onClick={() => setOpen(!open)}>
+        <Info size={15} style={{ color: 'var(--accent)' }} /> Como funciona a recepção
+        <span className="ml-auto text-xs" style={{ color: 'var(--fg3)' }}>{open ? 'ocultar' : 'ver'}</span>
+      </button>
+      {open && (
+        <ol className="mt-2 space-y-1.5 list-decimal pl-5" style={{ color: 'var(--fg2)' }}>
+          <li>O hóspede preenche o QR Code e o cadastro aparece aqui em destaque vermelho, com alerta sonoro.</li>
+          <li>Em <b>5 minutos</b> o sistema envia automaticamente uma mensagem neutra de <b>boas-vindas</b> (pelo servidor, mesmo com esta tela fechada). Use <b>Enviar boas-vindas agora</b> para antecipar.</li>
+          <li><b>Confirmar check-in</b> registra que o hóspede realmente chegou e envia as informações úteis do hotel (Wi-Fi, café, check-out).</li>
+          <li><b>Bloquear cadastro</b> impede qualquer mensagem para um cadastro indevido.</li>
+          <li><b>Finalizar estadia</b> envia na hora a pesquisa de 0 a 10 com o link de avaliação do Google.</li>
+        </ol>
+      )}
+    </div>
+  )
+}
+
+function Group({ title, tone, count, empty, children, collapsed }: { title: string; tone: string; count: number; empty: string; children: React.ReactNode; collapsed?: boolean }) {
+  const [open, setOpen] = useState(!collapsed)
+  return (
+    <section>
+      <button className="flex items-center gap-2 mb-3 text-[15px] font-bold" onClick={() => setOpen(!open)}>
+        <span className="w-2.5 h-2.5 rounded-full" style={{ background: `var(--${tone})` }} />
+        {title} <span style={{ color: 'var(--fg3)' }}>({count})</span>
+      </button>
+      {open && (count === 0
+        ? <div className="ui-subtle p-4 text-sm" style={{ color: 'var(--fg3)' }}>{empty}</div>
+        : <div className="space-y-3">{children}</div>)}
+    </section>
+  )
+}
+
+function Countdown({ msg }: { msg: Msg }) {
+  const now = useNow()
+  if (!msg.scheduled_for) return null
+  const remaining = Math.max(0, Math.ceil((Date.parse(msg.scheduled_for) - now) / 1000))
+  const pct = Math.min(100, (remaining / WELCOME_DELAY_SECONDS) * 100)
+  const mm = Math.floor(remaining / 60), ss = String(remaining % 60).padStart(2, '0')
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <Clock size={13} style={{ color: 'var(--warn)' }} />
+      <div className="w-28 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--warn-bg)' }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: remaining < 30 ? 'var(--danger)' : 'var(--warn)' }} />
+      </div>
+      {remaining > 0
+        ? <span className="font-mono font-bold" style={{ color: 'var(--warn)' }}>{mm}:{ss}</span>
+        : <span className="font-semibold" style={{ color: 'var(--info)' }}>enviando…</span>}
+      <span style={{ color: 'var(--fg3)' }}>{remaining > 0 ? 'para a boas-vindas automática' : ''}</span>
+    </div>
+  )
+}
+
+function Card({ item, isNew, busy, act }: {
+  item: Item; isNew: boolean; busy: string | null
+  act: (key: string, payload: Record<string, unknown>, okText: string) => Promise<void>
+}) {
+  const { registration: reg, guest, stay, welcome } = item
+  const sk = stayKey(reg.status, stay?.status)
+  const stayInfo = STAY_STATUS[sk]
+  const welcomeInfo = MSG_STATUS[welcome?.status || 'none']
+  const last = item.lastMessage
+  const [panel, setPanel] = useState<null | 'confirm' | 'block' | 'complete'>(null)
+  const [cin, setCin] = useState(reg.checkin_date)
+  const [cout, setCout] = useState(reg.checkout_date)
+  const [reason, setReason] = useState('')
+  const k = (a: string) => `${a}-${reg.id}`
+  const welcomeSent = welcome && ['sent', 'delivered', 'read'].includes(welcome.status)
+  const failedMsgs = item.messages.filter(m => m.status === 'failed')
+
+  return (
+    <div className={`ui-card-flat p-4 ${isNew ? 'ui-new' : ''}`}>
+      <div className="flex flex-col md:flex-row md:items-start gap-3">
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-semibold text-[15px] truncate">{guest.full_name}</h3>
+            {isNew && <Badge tone="danger" dot>NOVO</Badge>}
+            <Badge tone={stayInfo.tone}>{stayInfo.label}</Badge>
+            {sk !== 'blocked' && (
+              <span title="Status da mensagem de boas-vindas"><Badge tone={welcomeInfo.tone}>Boas-vindas: {welcomeInfo.label.toLowerCase()}</Badge></span>
+            )}
           </div>
-        )}
-      </main>
+          <div className="flex items-center gap-x-4 gap-y-1 text-[13px] flex-wrap" style={{ color: 'var(--fg2)' }}>
+            <span className="inline-flex items-center gap-1"><Phone size={13} /> {fmtPhone(guest.whatsapp_number)}</span>
+            <span className="inline-flex items-center gap-1"><CalendarDays size={13} /> {fmtDate(stay?.checkin_date || reg.checkin_date)} → {fmtDate(stay?.checkout_date || reg.checkout_date)}</span>
+            {reg.guest_count ? <span className="inline-flex items-center gap-1"><UsersIcon size={13} /> {reg.guest_count}</span> : null}
+            {guest.email && <span className="inline-flex items-center gap-1 truncate"><Mail size={13} /> {guest.email}</span>}
+          </div>
+          <div className="text-xs flex flex-wrap gap-x-3" style={{ color: 'var(--fg3)' }}>
+            <span>Cadastro {timeAgo(reg.created_at)} ({fmtTime(reg.created_at)})</span>
+            <span>Idioma: {guest.language === 'pt-BR' ? 'Português' : guest.language === 'es' ? 'Español' : 'English'}</span>
+            {stay?.confirmed_at && <span>Check-in confirmado às {fmtTime(stay.confirmed_at)}</span>}
+            {stay?.completed_at && <span>Finalizada às {fmtTime(stay.completed_at)}</span>}
+            {reg.block_reason && sk === 'blocked' && <span>Motivo: {reg.block_reason}</span>}
+          </div>
+          {sk === 'pending' && welcome?.status === 'scheduled' && <Countdown msg={welcome} />}
+          {last && last.automation_type !== 'welcome' && (
+            <div className="text-xs" style={{ color: 'var(--fg3)' }}>
+              Última mensagem: {AUTOMATION_LABEL[last.automation_type || ''] || last.automation_type} — <span style={{ color: `var(--${MSG_STATUS[last.status]?.tone || 'neutral'})` }}>{MSG_STATUS[last.status]?.label || last.status}</span>
+            </div>
+          )}
+          {failedMsgs.slice(0, 2).map(m => (
+            <div key={m.id} className="text-xs flex items-start gap-1.5 flex-wrap" style={{ color: 'var(--danger)' }}>
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span className="flex-1 min-w-[180px]">{AUTOMATION_LABEL[m.automation_type || ''] || 'Mensagem'} não enviada: {m.failure_reason}</span>
+              {m.automation_type !== 'welcome' && (
+                <button className="ui-btn ui-btn-secondary ui-btn-sm" disabled={!!busy} onClick={() => act(k('resend' + m.id), { action: 'resend', message_id: m.id }, 'Reenvio solicitado.')}>
+                  <RotateCw size={12} /> Tentar novamente
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap md:flex-col md:items-stretch gap-2 md:w-[210px] shrink-0">
+          {sk === 'pending' && (
+            <>
+              {!welcomeSent && (
+                <button className="ui-btn ui-btn-wa" disabled={!!busy} title="Envia agora a mensagem neutra de boas-vindas e cancela o disparo programado"
+                  onClick={() => act(k('welcome'), { action: 'welcome_now', registration_id: reg.id }, 'Boas-vindas processada.')}>
+                  {busy === k('welcome') ? 'Enviando…' : <><Send size={14} /> {welcome?.status === 'failed' ? 'Tentar boas-vindas de novo' : 'Enviar boas-vindas agora'}</>}
+                </button>
+              )}
+              <button className="ui-btn ui-btn-success" disabled={!!busy} onClick={() => setPanel(panel === 'confirm' ? null : 'confirm')}
+                title="O hóspede chegou: confirma a estadia e envia as informações úteis">
+                <LogIn size={14} /> Confirmar check-in
+              </button>
+              <button className="ui-btn ui-btn-danger" disabled={!!busy} onClick={() => setPanel(panel === 'block' ? null : 'block')}
+                title="Cadastro indevido: impede qualquer mensagem automática">
+                <Ban size={14} /> Bloquear cadastro
+              </button>
+            </>
+          )}
+          {sk === 'active' && (
+            <button className="ui-btn ui-btn-primary" disabled={!!busy} onClick={() => setPanel(panel === 'complete' ? null : 'complete')}>
+              <LogOut size={14} /> Finalizar estadia
+            </button>
+          )}
+          {sk === 'completed' && <span className="text-xs inline-flex items-center gap-1" style={{ color: 'var(--fg3)' }}><CheckCircle2 size={13} /> Pesquisa: {MSG_STATUS[item.messages.find(m => m.automation_type === 'checkout_survey')?.status || 'none'].label}</span>}
+        </div>
+      </div>
+
+      {panel === 'confirm' && (
+        <div className="mt-3 ui-subtle p-3 space-y-3">
+          <p className="text-[13px]" style={{ color: 'var(--fg2)' }}>Confira as datas informadas pelo hóspede. Ao confirmar, ele passa para <b>Hospedados</b> e recebe a mensagem com as informações úteis do hotel.</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs"><span className="ui-label">Entrada</span><input type="date" className="ui-input !w-auto" value={cin} onChange={e => setCin(e.target.value)} /></label>
+            <label className="text-xs"><span className="ui-label">Saída</span><input type="date" className="ui-input !w-auto" value={cout} min={cin} onChange={e => setCout(e.target.value)} /></label>
+            <button className="ui-btn ui-btn-success" disabled={!!busy || !cin || !cout || cout <= cin}
+              onClick={async () => { await act(k('confirm'), { action: 'confirm_checkin', registration_id: reg.id, checkin_date: cin, checkout_date: cout }, 'Check-in confirmado.'); setPanel(null) }}>
+              {busy === k('confirm') ? 'Confirmando…' : 'Confirmar check-in'}
+            </button>
+            <button className="ui-btn ui-btn-ghost" onClick={() => setPanel(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      {panel === 'block' && (
+        <div className="mt-3 ui-subtle p-3 space-y-3">
+          <p className="text-[13px]" style={{ color: 'var(--fg2)' }}>O cadastro será bloqueado e <b>nenhuma mensagem</b> será enviada para este hóspede. Use para cadastros falsos ou duplicados.</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <input className="ui-input flex-1 min-w-[200px]" placeholder="Motivo (opcional)" value={reason} onChange={e => setReason(e.target.value)} maxLength={300} />
+            <button className="ui-btn ui-btn-danger" disabled={!!busy}
+              onClick={async () => { await act(k('block'), { action: 'block', registration_id: reg.id, reason: reason || undefined }, 'Cadastro bloqueado.'); setPanel(null) }}>
+              {busy === k('block') ? 'Bloqueando…' : 'Confirmar bloqueio'}
+            </button>
+            <button className="ui-btn ui-btn-ghost" onClick={() => setPanel(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      {panel === 'complete' && stay && (
+        <div className="mt-3 ui-subtle p-3 flex flex-wrap items-center gap-3">
+          <p className="text-[13px] flex-1 min-w-[220px]" style={{ color: 'var(--fg2)' }}>Registra o checkout e envia <b>agora</b> a pesquisa de satisfação (0 a 10) com o link de avaliação do Google, na mesma mensagem.</p>
+          <button className="ui-btn ui-btn-primary" disabled={!!busy}
+            onClick={async () => { await act(k('complete'), { action: 'complete', stay_id: stay.id }, 'Estadia finalizada.'); setPanel(null) }}>
+            {busy === k('complete') ? 'Finalizando…' : 'Confirmar checkout'}
+          </button>
+          <button className="ui-btn ui-btn-ghost" onClick={() => setPanel(null)}>Cancelar</button>
+        </div>
+      )}
     </div>
   )
 }

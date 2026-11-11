@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { ThemeToggle } from '@/components/ui/kit'
 import { createBrowserSupabase } from '@/lib/supabase/client'
 import { useState, useEffect } from 'react'
 import {
@@ -53,7 +54,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Loading state
   if (authorized === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+      <div className="theme-scope min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
         <div className="text-center">
           <Loader2 size={32} className="animate-spin mx-auto mb-3" style={{ color: 'var(--bb)' }} />
           <p className="text-sm" style={{ color: 'var(--fg3)' }}>Verificando acesso...</p>
@@ -65,7 +66,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Not authorized
   if (!authorized) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg)' }}>
+      <div className="theme-scope min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg)' }}>
         <div className="glass-card p-10 max-w-[420px] w-full text-center hover:translate-y-0">
           <ShieldAlert size={48} className="mx-auto mb-4" style={{ color: '#EF4444' }} />
           <h1 className="text-xl font-bold mb-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -110,10 +111,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   return (
-    <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
+    <div className="theme-scope min-h-screen flex" style={{ background: 'var(--bg)' }}>
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-[240px] shrink-0 sticky top-0 h-screen" style={{
-        background: 'rgba(5,8,16,.6)',
+        background: 'var(--sidebar-bg)',
         backdropFilter: 'blur(20px)',
         borderRight: '1px solid rgba(239,68,68,.1)',
       }}>
@@ -134,6 +135,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         <div className="px-3 py-4 shrink-0 space-y-1" style={{ borderTop: '1px solid var(--glass-border)' }}>
+          <div className="[&>button]:w-full [&>button]:justify-start"><ThemeToggle /></div>
           <Link href="/painel" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full" style={{ color: 'var(--fg3)' }}>
             <Building2 size={18} className="shrink-0" />
             Voltar ao hotel
@@ -147,7 +149,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Mobile header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-[56px] flex items-center justify-between px-4" style={{
-        background: 'rgba(5,8,16,.9)',
+        background: 'var(--header-bg)',
         backdropFilter: 'blur(20px)',
         borderBottom: '1px solid rgba(239,68,68,.15)',
       }}>

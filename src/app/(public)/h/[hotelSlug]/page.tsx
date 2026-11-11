@@ -12,7 +12,6 @@ import {
   ChevronLeft,
   CheckCircle2,
   AlertCircle,
-  Globe,
   Shield,
   Loader2,
   MessageCircle,
@@ -32,6 +31,8 @@ interface HotelData {
   is_active: boolean
   instagram_url: string | null
   whatsapp_number: string | null
+  logo_url?: string | null
+  primary_language?: string | null
 }
 
 interface FormData {
@@ -61,7 +62,51 @@ interface FormErrors {
 const DDI_OPTIONS = [
   { code: '+55', country: 'BR', label: 'Brasil (+55)' },
   { code: '+595', country: 'PY', label: 'Paraguay (+595)' },
+  { code: '+54', country: 'AR', label: 'Argentina (+54)' },
+  { code: '+598', country: 'UY', label: 'Uruguay (+598)' },
+  { code: '+56', country: 'CL', label: 'Chile (+56)' },
+  { code: '+591', country: 'BO', label: 'Bolivia (+591)' },
+  { code: '+1', country: 'US', label: 'USA/Canada (+1)' },
+  { code: '+351', country: 'PT', label: 'Portugal (+351)' },
+  { code: '+34', country: 'ES', label: 'España (+34)' },
 ] as const
+
+/* Bandeiras em SVG (sem emojis) */
+function Flag({ code }: { code: 'pt-BR' | 'es' | 'en' }) {
+  if (code === 'pt-BR') return (
+    <svg viewBox="0 0 28 20" width="22" height="16" aria-hidden="true" className="rounded-[3px] shrink-0">
+      <rect width="28" height="20" fill="#009C3B" /><path d="M14 2.5 25.5 10 14 17.5 2.5 10Z" fill="#FFDF00" /><circle cx="14" cy="10" r="4.6" fill="#002776" />
+      <path d="M9.6 9.2c2.9-.6 6.1-.2 8.7 1.3" stroke="#fff" strokeWidth=".9" fill="none" />
+    </svg>
+  )
+  if (code === 'es') return (
+    <svg viewBox="0 0 28 20" width="22" height="16" aria-hidden="true" className="rounded-[3px] shrink-0">
+      <rect width="28" height="20" fill="#D52B1E" /><rect y="6.67" width="28" height="6.66" fill="#fff" /><rect y="13.33" width="28" height="6.67" fill="#0038A8" />
+      <circle cx="14" cy="10" r="2" fill="none" stroke="#3A7D2C" strokeWidth=".8" />
+    </svg>
+  )
+  return (
+    <svg viewBox="0 0 28 20" width="22" height="16" aria-hidden="true" className="rounded-[3px] shrink-0">
+      <rect width="28" height="20" fill="#fff" />
+      {[0, 2, 4, 6, 8, 10, 12].map(i => <rect key={i} y={(i * 20) / 13} width="28" height={20 / 13} fill="#B22234" />)}
+      <rect width="12" height={(20 / 13) * 7} fill="#3C3B6E" />
+    </svg>
+  )
+}
+
+const LANG_OPTIONS: { code: 'pt-BR' | 'es' | 'en'; label: string }[] = [
+  { code: 'pt-BR', label: 'Português' },
+  { code: 'es', label: 'Español' },
+  { code: 'en', label: 'English' },
+]
+
+function MaisHospedesMark({ small }: { small?: boolean }) {
+  return (
+    <span className={`${small ? 'text-xs' : 'text-sm'} font-extrabold text-white/80`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      Mais<span className="text-indigo-400">Hóspedes</span>
+    </span>
+  )
+}
 
 /* ------------------------------------------------------------------ */
 /* Phone masks                                                         */
@@ -94,7 +139,7 @@ function isValidPhone(raw: string, ddi: string): boolean {
   const digits = raw.replace(/\D/g, '')
   if (ddi === '+55') return digits.length === 10 || digits.length === 11
   if (ddi === '+595') return digits.length >= 7 && digits.length <= 9
-  return digits.length >= 7
+  return digits.length >= 6 && digits.length <= 14
 }
 
 /* ------------------------------------------------------------------ */
@@ -144,6 +189,7 @@ export default function GuestRegistrationPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [locale, setLocale] = useState<Locale>('pt-BR')
+  const localeTouched = useRef(false)
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -199,6 +245,9 @@ export default function GuestRegistrationPage() {
           setError(i.errors.hotelInactive)
         } else {
           setHotel(data)
+          if (!localeTouched.current && (data.primary_language === 'es' || data.primary_language === 'en')) {
+            setLocale(data.primary_language)
+          }
         }
       } catch (err) {
         clearTimeout(timeoutId)
@@ -383,6 +432,7 @@ export default function GuestRegistrationPage() {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-[#050810] px-4">
         <div className="glass-card p-6 sm:p-8 max-w-md w-full text-center space-y-5">
+          <div className="flex justify-center"><MaisHospedesMark /></div>
           <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
           <h2 className="text-xl sm:text-2xl font-bold text-white">{i.success.title}</h2>
           <p className="text-gray-300 text-sm sm:text-base">{i.success.message}</p>
@@ -421,21 +471,40 @@ export default function GuestRegistrationPage() {
   const today = new Date().toISOString().split('T')[0]
 
   return (
-    <div className="min-h-dvh bg-[#050810] flex flex-col items-center py-4 sm:py-6 px-4">
+    <div className="min-h-dvh bg-[#050810] flex flex-col items-center pt-5 pb-8 sm:py-8 px-4">
       {/* Header */}
-      <div className="w-full max-w-md mb-4 sm:mb-6">
-        <div className="flex items-center justify-between mb-3 sm:mb-4">
-          <h1 className="text-lg sm:text-xl font-bold text-white truncate mr-2">{hotel.name}</h1>
+      <div className="w-full max-w-md mb-5">
+        {/* Language selector: 3 idiomas, com bandeira e nome */}
+        <div className="flex justify-center gap-1.5 mb-5" role="radiogroup" aria-label={i.language.label}>
+          {LANG_OPTIONS.map((l) => (
+            <button
+              key={l.code}
+              type="button"
+              role="radio"
+              aria-checked={locale === l.code}
+              onClick={() => { localeTouched.current = true; setLocale(l.code) }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-colors border ${
+                locale === l.code ? 'bg-indigo-500/15 border-indigo-400/60 text-white' : 'border-white/10 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Flag code={l.code} />
+              {l.label}
+            </button>
+          ))}
+        </div>
 
-          {/* Language selector */}
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors shrink-0"
-            onClick={() => setLocale(locale === 'pt-BR' ? 'es' : 'pt-BR')}
-          >
-            <Globe className="w-4 h-4" />
-            {locale === 'pt-BR' ? 'PT' : 'ES'}
-          </button>
+        {/* Identidade: logo do hotel somente na primeira etapa */}
+        <div className="flex items-center justify-center min-h-[64px] mb-4">
+          {step === 1 && hotel.logo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={hotel.logo_url}
+              alt={hotel.name}
+              className="max-h-[72px] max-w-[220px] w-auto h-auto object-contain"
+            />
+          ) : (
+            <h1 className="text-lg sm:text-xl font-bold text-white text-center leading-tight px-2">{hotel.name}</h1>
+          )}
         </div>
 
         {/* Progress bar */}
@@ -443,27 +512,29 @@ export default function GuestRegistrationPage() {
           {[1, 2, 3].map((s) => (
             <div
               key={s}
-              className={`h-1 flex-1 rounded-full transition-colors ${
+              className={`h-1.5 flex-1 rounded-full transition-colors ${
                 s <= step ? 'bg-indigo-500' : 'bg-white/10'
               }`}
             />
           ))}
         </div>
         <div className="flex justify-between mt-2 text-xs text-gray-500">
-          <span className={step >= 1 ? 'text-indigo-400' : ''}>{i.form.step1}</span>
-          <span className={step >= 2 ? 'text-indigo-400' : ''}>{i.form.step2}</span>
-          <span className={step >= 3 ? 'text-indigo-400' : ''}>{i.form.step3}</span>
+          <span className={step >= 1 ? 'text-indigo-300' : ''}>{i.form.step1}</span>
+          <span className={step >= 2 ? 'text-indigo-300' : ''}>{i.form.step2}</span>
+          <span className={step >= 3 ? 'text-indigo-300' : ''}>{i.form.step3}</span>
         </div>
       </div>
 
       {/* Welcome */}
-      <div className="w-full max-w-md mb-4 sm:mb-6 text-center">
-        <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">{i.form.welcome}</h2>
-        <p className="text-gray-400 text-sm">{i.form.subtitle}</p>
-      </div>
+      {step === 1 && (
+        <div className="w-full max-w-md mb-5 text-center">
+          <h2 className="text-2xl font-bold text-white mb-1.5">{i.form.welcome}</h2>
+          <p className="text-gray-400 text-sm leading-relaxed">{i.form.subtitle}</p>
+        </div>
+      )}
 
       {/* Form card */}
-      <div className="glass-card p-4 sm:p-6 w-full max-w-md">
+      <div className="glass-card p-5 sm:p-6 w-full max-w-md">
         {/* Step 1: Personal data */}
         {step === 1 && (
           <div className="space-y-4 sm:space-y-5">
@@ -690,7 +761,7 @@ export default function GuestRegistrationPage() {
           {step > 1 && (
             <button
               type="button"
-              className="btn-glass flex items-center justify-center gap-1 py-3 px-4 rounded-xl text-sm flex-1"
+              className="btn-glass flex items-center justify-center gap-1 !py-3.5 !px-4 !rounded-xl !text-[15px] flex-1"
               onClick={prevStep}
             >
               <ChevronLeft className="w-4 h-4" />
@@ -700,7 +771,7 @@ export default function GuestRegistrationPage() {
           {step < 3 && (
             <button
               type="button"
-              className="btn-primary flex items-center justify-center gap-1 py-3 px-4 rounded-xl text-sm flex-1"
+              className="btn-primary flex items-center justify-center gap-1 !py-3.5 !px-4 !rounded-xl !text-[15px] flex-1"
               onClick={nextStep}
             >
               {i.form.next}
@@ -710,7 +781,7 @@ export default function GuestRegistrationPage() {
           {step === 3 && (
             <button
               type="button"
-              className="btn-primary flex items-center justify-center gap-1 py-3 px-4 rounded-xl text-sm flex-1 disabled:opacity-50"
+              className="btn-primary flex items-center justify-center gap-1 !py-3.5 !px-4 !rounded-xl !text-[15px] flex-1 disabled:opacity-50"
               onClick={handleSubmit}
               disabled={submitting}
             >
@@ -728,6 +799,10 @@ export default function GuestRegistrationPage() {
             </button>
           )}
         </div>
+      </div>
+
+      <div className="mt-6 flex items-center gap-1.5 text-[11px] text-gray-500">
+        <Shield className="w-3.5 h-3.5" /> <MaisHospedesMark small />
       </div>
     </div>
   )

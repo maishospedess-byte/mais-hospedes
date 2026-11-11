@@ -28,7 +28,7 @@ export async function GET(
 
     const { data: hotel, error } = await supabase
       .from('hotels')
-      .select('id, name, slug, is_active, instagram_url, whatsapp_number')
+      .select('*') // '*' mantém o formulário funcionando mesmo antes de novas colunas existirem
       .eq('slug', slug)
       .single()
 
@@ -53,6 +53,8 @@ export async function GET(
         is_active: hotel.is_active,
         instagram_url: hotel.instagram_url || null,
         whatsapp_number: hotel.whatsapp_number || null,
+        logo_url: (hotel as { logo_url?: string | null }).logo_url || null,
+        primary_language: hotel.primary_language || 'pt-BR',
       },
       { headers }
     )

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceSupabase } from '@/lib/supabase/server'
 import { registrationSchema } from '@/lib/validators/registration'
 import { randomUUID } from 'crypto'
+import { scheduleMessage } from '@/lib/automations/engine'
+import { WELCOME_DELAY_SECONDS } from '@/lib/automations/definitions'
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,42 +46,31 @@ export async function POST(request: NextRequest) {
     const hotelId = hotel.id
     const whatsappNumber = data.whatsapp_number
 
-    // 2. Check for duplicate active registration (same phone, same hotel, recent)
-    const { data: existingReg } = await supabase
-      .from('registrations')
-      .select('id, guest_id')
+    // 2. Find existing guest profile (by phone + hotel)
+    const { data: existingProfile } = await supabase
+      .from('guest_profiles')
+      .select('id')
       .eq('hotel_id', hotelId)
-      .eq('status', 'registration_pending')
-      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-      .limit(1)
+      .eq('whatsapp_number', whatsappNumber)
+      .maybeSingle()
 
-    // Check by guest phone
-    if (!existingReg || existingReg.length === 0) {
-      // Continue — no duplicate
-    } else {
-      // Verify the guest phone matches
-      const { data: existingGuest } = await supabase
-        .from('guest_profiles')
+    // 3. Duplicate check: same guest with a pending registration in the last 24h
+    if (existingProfile) {
+      const { data: dup } = await supabase
+        .from('registrations')
         .select('id')
-        .eq('id', existingReg[0].guest_id)
-        .eq('whatsapp_number', whatsappNumber)
-        .single()
-
-      if (existingGuest) {
+        .eq('hotel_id', hotelId)
+        .eq('guest_id', existingProfile.id)
+        .eq('status', 'registration_pending')
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .limit(1)
+      if (dup && dup.length > 0) {
         return NextResponse.json(
           { error: 'Duplicate registration', code: 'DUPLICATE' },
           { status: 409 }
         )
       }
     }
-
-    // 3. Upsert guest profile (by phone + hotel)
-    const { data: existingProfile } = await supabase
-      .from('guest_profiles')
-      .select('id')
-      .eq('hotel_id', hotelId)
-      .eq('whatsapp_number', whatsappNumber)
-      .single()
 
     let guestId: string
 
@@ -166,20 +157,22 @@ export async function POST(request: NextRequest) {
       user_agent: userAgent,
     })
 
-    // 6. Schedule welcome message (50-second timer)
-    // For V1, we insert a scheduled message that will be processed by a background job
-    const scheduledFor = new Date(Date.now() + 50 * 1000).toISOString()
-
-    await supabase.from('messages').insert({
-      hotel_id: hotelId,
-      guest_id: guestId,
-      direction: 'outbound',
-      status: 'scheduled',
-      automation_type: 'welcome',
+    // 6. Schedule welcome message (5 minutes). Sent by the server-side dispatcher,
+    //    even with the reception browser closed. Idempotent per registration.
+    try {
+      await scheduleMessage({
+      hotelId,
+      guestId,
+      registrationId: registration.id,
+      type: 'welcome',
       language: data.language,
-      scheduled_for: scheduledFor,
-      idempotency_key: `welcome-${registration.id}`,
-    })
+      scheduledFor: new Date(Date.now() + WELCOME_DELAY_SECONDS * 1000),
+      idempotencyKey: `welcome-${registration.id}`,
+      }, supabase)
+    } catch (scheduleErr) {
+      // O cadastro já foi gravado; a recepção pode enviar manualmente.
+      console.error('Failed to schedule welcome message:', scheduleErr)
+    }
 
     return NextResponse.json({
       success: true,

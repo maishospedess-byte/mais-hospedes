@@ -4,7 +4,7 @@
 export type UserRole = 'owner' | 'manager' | 'receptionist'
 export type PlanTier = 'essencial' | 'profissional' | 'premium'
 export type SubscriptionStatus = 'trial' | 'active' | 'past_due' | 'cancelled' | 'suspended'
-export type RegistrationStatus = 'registration_pending' | 'registration_blocked'
+export type RegistrationStatus = 'registration_pending' | 'registration_confirmed' | 'registration_blocked'
 export type StayStatus = 'stay_active' | 'stay_completed' | 'cancelled'
 export type MessageDirection = 'outbound' | 'inbound'
 export type MessageStatus = 'scheduled' | 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'cancelled'
@@ -39,6 +39,7 @@ export interface Hotel {
   wifi_info: string | null
   rules: string | null
   reception_contact: string | null
+  logo_url: string | null
   timezone: string
   primary_language: string
   country: string
@@ -119,6 +120,8 @@ export interface Registration {
   blocked_by: string | null
   blocked_at: string | null
   block_reason: string | null
+  confirmed_at: string | null
+  confirmed_by: string | null
   created_at: string
   updated_at: string
 }
@@ -180,6 +183,14 @@ export interface Message {
   failed_at: string | null
   failure_reason: string | null
   idempotency_key: string | null
+  registration_id: string | null
+  recipient: string | null
+  attempts: number
+  failure_code: string | null
+  trigger_source: string | null
+  triggered_by: string | null
+  template_name: string | null
+  params: unknown
   created_at: string
   updated_at: string
 }
